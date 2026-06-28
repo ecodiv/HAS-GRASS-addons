@@ -1,6 +1,7 @@
 ## NAME
 
-_v.snap_: Snap points from a vector point map onto the nearest location on the features of a vector line map. Original categories and attributes are preserved.
+_v.snap_: Snap points from a vector point map onto the nearest location on the
+features of a vector line map. Original categories and attributes are preserved.
 
 ## DESCRIPTION
 

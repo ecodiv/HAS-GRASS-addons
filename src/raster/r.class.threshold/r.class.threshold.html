@@ -1,4 +1,206 @@
-<h2>DESCRIPTION</h2>
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+ <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+ <meta name="Author" content="GRASS Development Team">
+ <meta http-equiv="content-language" content="en-us">
+ <meta name="viewport" content="width=device-width, initial-scale=1">
+ <title>r.class.threshold - GRASS manual</title>
+ <meta name="description" content="r.class.threshold: Finds the optimal threshold for separating a continuous raster into two classes.">
+ <meta name="keywords" content="raster, threshold, classification, accuracy, ROC, AUC, validation">
+ <link rel="stylesheet" href="grassdocs.css" type="text/css">
+</head>
+<body bgcolor="white">
+<div id="container">
+
+<a href="file:///usr/local/grassmaster/grass86/docs/html/index.html"><img src="grass_logo.png" alt="GRASS logo"></a>
+<script>
+// Create hamburger menu TOC HTML elements by the JavaScript
+let temp = document.createElement('template');
+const toc = '<ul class="toc-mobile-screen" id="toc-mobile-screen">' + 
+'<li><a class="toc-item" href="#description">DESCRIPTION</a>' + 
+'<ul>' + 
+'<li><a class="toc-item" href="#confusion-matrix">Confusion matrix</a>' + 
+'</li>' + 
+'<li><a class="toc-item" href="#statistics-and-formulas">Statistics and formulas</a>' + 
+'</li>' + 
+'<li><a class="toc-item" href="#selection-criteria">Selection criteria</a>' + 
+'</li>' + 
+'<li><a class="toc-item" href="#choosing-a-criterion">Choosing a criterion</a>' + 
+'</li>' + 
+'<li><a class="toc-item" href="#calibration-vs-validation">Calibration vs validation</a>' + 
+'</li>' + 
+'<li><a class="toc-item" href="#outputs">Outputs</a>' + 
+'</li>' + 
+'</ul></li>' + 
+'<li><a class="toc-item" href="#notes">NOTES</a>' + 
+'</li>' + 
+'<li><a class="toc-item" href="#example">EXAMPLE</a>' + 
+'</li>' + 
+'<li><a class="toc-item" href="#see-also">SEE ALSO</a>' + 
+'</li>' + 
+'<li><a class="toc-item" href="#author">AUTHOR</a>' + 
+'</li>' +
+'<a class="close" href="#">' +
+'<img src="./hamburger_menu_close.svg" alt="close">' +
+'</a>' +
+'</ul>' +
+'<a class="hamburger" href="#toc-mobile-screen">' +
+'<img src="./hamburger_menu.svg" alt="menu">' +
+'</a>';
+temp.innerHTML = toc;
+const grassLogoLink = document.getElementsByTagName("img")[0];
+grassLogoLink.after(temp.content);
+</script>
+<hr class="header">
+
+<h2>NAME</h2>
+<em><b>r.class.threshold</b></em>  - Finds the optimal threshold for separating a continuous raster into two classes.
+<h2>KEYWORDS</h2>
+<a href="file:///usr/local/grassmaster/grass86/docs/html/raster.html">raster</a>, <a href="file:///usr/local/grassmaster/grass86/docs/html/topic_threshold.html">threshold</a>, <a href="file:///usr/local/grassmaster/grass86/docs/html/keywords.html#classification">classification</a>, <a href="file:///usr/local/grassmaster/grass86/docs/html/keywords.html#accuracy">accuracy</a>, <a href="file:///usr/local/grassmaster/grass86/docs/html/keywords.html#ROC">ROC</a>, <a href="file:///usr/local/grassmaster/grass86/docs/html/keywords.html#AUC">AUC</a>, <a href="file:///usr/local/grassmaster/grass86/docs/html/keywords.html#validation">validation</a>
+<h2>SYNOPSIS</h2>
+<div id="name"><b>r.class.threshold</b><br></div>
+<b>r.class.threshold --help</b><br>
+<div id="synopsis"><b>r.class.threshold</b> [-<b>r</b>] <b>raster</b>=<em>name</em> <b>map</b>=<em>name</em> <b>column</b>=<em>name</em>  [<b>positive_value</b>=<em>string</em>]   [<b>negative_value</b>=<em>string</em>]   [<b>layer</b>=<em>string</em>]   [<b>output</b>=<em>name</em>]   [<b>format</b>=<em>string</em>]   [<b>classified_output</b>=<em>name</em>]   [<b>apply_criterion</b>=<em>string</em>]   [<b>plots</b>=<em>string</em>[,<i>string</i>,...]]   [<b>criterion</b>=<em>string</em>[,<i>string</i>,...]]   [<b>plot</b>=<em>name</em>]   [<b>roc_plot</b>=<em>name</em>]   [<b>boxplot</b>=<em>name</em>]   [<b>range</b>=<em>string</em>]   [<b>steps</b>=<em>integer</em>]   [<b>backend</b>=<em>string</em>]   [<b>tie_tolerance</b>=<em>float</em>]   [--<b>overwrite</b>]  [--<b>help</b>]  [--<b>verbose</b>]  [--<b>quiet</b>]  [--<b>ui</b>] 
+</div>
+
+<div id="flags">
+<h3>Flags:</h3>
+<dl>
+<dt><b>-r</b></dt>
+<dd>Reverse rule (class 1 where value is below the threshold)</dd>
+<dd>Use when low raster values indicate the target class</dd>
+
+<dt><b>--overwrite</b></dt>
+<dd>Allow output files to overwrite existing files</dd>
+<dt><b>--help</b></dt>
+<dd>Print usage summary</dd>
+<dt><b>--verbose</b></dt>
+<dd>Verbose module output</dd>
+<dt><b>--quiet</b></dt>
+<dd>Quiet module output</dd>
+<dt><b>--ui</b></dt>
+<dd>Force launching GUI dialog</dd>
+</dl>
+</div>
+
+<div id="parameters">
+<h3>Parameters:</h3>
+<dl>
+<dt><b>raster</b>=<em>name</em>&nbsp;<b>[required]</b></dt>
+<dd>Input raster</dd>
+<dd>Name of input raster with continuous values</dd>
+
+<dt><b>map</b>=<em>name</em>&nbsp;<b>[required]</b></dt>
+<dd>Reference points</dd>
+<dd>Point vector with an attribute table holding the observed class</dd>
+
+<dt><b>column</b>=<em>name</em>&nbsp;<b>[required]</b></dt>
+<dd>Class column</dd>
+<dd>Attribute column holding the observed class</dd>
+
+<dt><b>positive_value</b>=<em>string</em></dt>
+<dd>Positive (target) value</dd>
+<dd>Value in the class column that denotes the target class. Default is 1.</dd>
+<dd>Default: <em>1</em></dd>
+
+<dt><b>negative_value</b>=<em>string</em></dt>
+<dd>Negative (non-target) value</dd>
+<dd>Value in the class column that denotes the non-target class. Default is 0.</dd>
+<dd>Default: <em>0</em></dd>
+
+<dt><b>layer</b>=<em>string</em></dt>
+<dd>Layer</dd>
+<dd>Vector features can have category values in different layers. This number determines which layer to use. When used with direct OGR access this is the layer name.</dd>
+<dd>Default: <em>1</em></dd>
+
+<dt><b>output</b>=<em>name</em></dt>
+<dd>Threshold table file</dd>
+<dd>File for the candidate-threshold table. Default is standard output.</dd>
+
+<dt><b>format</b>=<em>string</em></dt>
+<dd>Table format</dd>
+<dd>Output format of the threshold table</dd>
+<dd>Options: <em>plain, csv, json</em></dd>
+<dd>Default: <em>plain</em></dd>
+
+<dt><b>classified_output</b>=<em>name</em></dt>
+<dd>Classified raster</dd>
+<dd>Optional binary 0/1 raster, produced by applying the threshold of the criterion set by apply_criterion</dd>
+
+<dt><b>apply_criterion</b>=<em>string</em></dt>
+<dd>Criterion for classified raster</dd>
+<dd>Criterion whose threshold is applied when classified_output is requested</dd>
+<dd>Options: <em>max_youden_j, equal_sens_spec, closest_topleft, max_accuracy, max_f1, max_kappa</em></dd>
+<dd>Default: <em>max_youden_j</em></dd>
+
+<dt><b>plots</b>=<em>string[,<i>string</i>,...]</em></dt>
+<dd>Plots to display interactively</dd>
+<dd>Which plots to show in a window (needs an interactive backend and a display). If none are given, no plot is shown interactively; saving to a file is controlled separately by plot=, roc_plot= and boxplot=.</dd>
+<dd>Options: <em>threshold, roc, boxplot</em></dd>
+
+<dt><b>criterion</b>=<em>string[,<i>string</i>,...]</em></dt>
+<dd>Reference-line criteria</dd>
+<dd>Criteria whose thresholds are drawn as reference lines on the threshold plot and boxplot. Use 'all' for every criterion. This does NOT limit the output table, which always lists every criterion. Criteria sharing a threshold are merged in the legend.</dd>
+<dd>Options: <em>all, max_youden_j, equal_sens_spec, closest_topleft, max_accuracy, max_f1, max_kappa</em></dd>
+<dd>Default: <em>max_youden_j</em></dd>
+
+<dt><b>plot</b>=<em>name</em></dt>
+<dd>Threshold plot file</dd>
+<dd>File for the sensitivity/specificity vs threshold plot. The extension sets the type. If omitted, no file is written.</dd>
+
+<dt><b>roc_plot</b>=<em>name</em></dt>
+<dd>ROC plot file</dd>
+<dd>File for the ROC plot. The extension sets the type. If omitted, no file is written.</dd>
+
+<dt><b>boxplot</b>=<em>name</em></dt>
+<dd>Boxplot file</dd>
+<dd>File for the boxplot. The extension sets the type. If omitted, no file is written.</dd>
+
+<dt><b>range</b>=<em>string</em></dt>
+<dd>Threshold plot x-axis range</dd>
+<dd>'raster' spans the full raster min/max; 'sample' spans only the range of the sampled reference values (useful when the raster has extreme values not represented in the reference points)</dd>
+<dd>Options: <em>raster, sample</em></dd>
+<dd>Default: <em>raster</em></dd>
+
+<dt><b>steps</b>=<em>integer</em></dt>
+<dd>Threshold plot resolution</dd>
+<dd>Number of steps drawn on the sensitivity/specificity plot. Does not affect the threshold table, ROC curve or AUC, which use the empirical value breakpoints.</dd>
+<dd>Options: <em>2-100000</em></dd>
+<dd>Default: <em>100</em></dd>
+
+<dt><b>backend</b>=<em>string</em></dt>
+<dd>Matplotlib backend</dd>
+<dd>Backend used for plotting. 'default' lets matplotlib auto-select. 'no_plot' skips plotting entirely (matplotlib not imported; only the threshold table is produced - useful for automation). 'Agg' is non-interactive (savefig only). The others are interactive and need the matching GUI toolkit installed (WXAgg=wxPython, QtAgg=PyQt/PySide, TkAgg=Tkinter, GTK*Agg=GTK, MacOSX=native macOS). Falls back to Agg with a warning if the chosen backend cannot be initialised.</dd>
+<dd>Options: <em>default, no_plot, Agg, WXAgg, QtAgg, TkAgg, GTK3Agg, GTK4Agg, MacOSX</em></dd>
+<dd>Default: <em>default</em></dd>
+
+<dt><b>tie_tolerance</b>=<em>float</em></dt>
+<dd>Tie tolerance for optima</dd>
+<dd>Two scores are treated as tied optima when they differ by no more than this tolerance (relative + absolute, as in numpy.isclose). The default 0 requires exact equality, so a one-observation difference is not silently merged.</dd>
+<dd>Default: <em>0.0</em></dd>
+
+</dl>
+</div>
+<div class="toc">
+<h4 class="toc">Table of contents</h4>
+<ul class="toc">
+    <li class="toc"><a href="#description" class="toc">DESCRIPTION</a>
+    <ul class="toc">
+        <li class="toc"><a href="#confusion-matrix" class="toc">Confusion matrix</a></li>
+        <li class="toc"><a href="#statistics-and-formulas" class="toc">Statistics and formulas</a></li>
+        <li class="toc"><a href="#selection-criteria" class="toc">Selection criteria</a></li>
+        <li class="toc"><a href="#choosing-a-criterion" class="toc">Choosing a criterion</a></li>
+        <li class="toc"><a href="#calibration-vs-validation" class="toc">Calibration vs validation</a></li>
+        <li class="toc"><a href="#outputs" class="toc">Outputs</a></li>
+    </ul></li>
+    <li class="toc"><a href="#notes" class="toc">NOTES</a></li>
+    <li class="toc"><a href="#example" class="toc">EXAMPLE</a></li>
+    <li class="toc"><a href="#see-also" class="toc">SEE ALSO</a></li>
+    <li class="toc"><a href="#author" class="toc">AUTHOR</a></li>
+</ul>
+</div>
+<h2><a name="description">DESCRIPTION</a></h2>
 
 <i>r.class.threshold</i> helps to find a good threshold for separating a raster
 with continuous values (such as an NDVI map) into two classes. The threshold is
@@ -15,7 +217,7 @@ The module reports candidate thresholds, diagnostic statistics, and plots. It
 does <i>not</i> by itself produce a classified map, but it can optionally write
 one (see <b>classified_output</b> below).
 
-<h3>Confusion matrix</h3>
+<h3><a name="confusion-matrix">Confusion matrix</a></h3>
 
 The module samples the input <b>raster</b> at every reference point. It then
 computes, for the empirical breakpoints of the sampled values, a confusion
@@ -38,7 +240,7 @@ target class. This gives four counts:
 
 with <tt>N = TP + FP + FN + TN</tt> the total number of reference points.
 
-<h3>Statistics and formulas</h3>
+<h3><a name="statistics-and-formulas">Statistics and formulas</a></h3>
 
 Each candidate threshold is described by the following per-threshold statistics:
 
@@ -126,7 +328,7 @@ where <tt>R1</tt> is the sum of the (midrank) ranks of the raster values at the
 positive points after ranking all points by raster value, <tt>n1</tt> is the
 number of positive points and <tt>n0</tt> the number of negative points.
 
-<h3>Selection criteria</h3>
+<h3><a name="selection-criteria">Selection criteria</a></h3>
 
 The candidate-threshold table reports one row per criterion. Every criterion is
 always listed in the output table; the <b>criterion</b> option only controls
@@ -230,7 +432,7 @@ Note that the AUC measures the overall ranking quality of the raster as a
 predictor and is independent of any single threshold; it is reported alongside the
 thresholds for context, not as a validation of the chosen threshold itself.
 
-<h3>Choosing a criterion</h3>
+<h3><a name="choosing-a-criterion">Choosing a criterion</a></h3>
 
 For balanced classes, <tt>max_accuracy</tt> is reasonable. For <b>imbalanced</b>
 classes it can be misleading (a classifier that always predicts the majority class
@@ -240,7 +442,7 @@ or <tt>max_kappa</tt> are usually more informative. If the target class is rare 
 you care primarily about it, a precision-recall view (the <tt>precision</tt> and
 <tt>recall</tt> fields) is more telling than ROC/AUC.
 
-<h3>Calibration vs validation</h3>
+<h3><a name="calibration-vs-validation">Calibration vs validation</a></h3>
 
 The same point set is used both to choose the threshold and to report the
 statistics at that threshold. This is threshold <i>calibration</i>, not
@@ -250,7 +452,7 @@ If you need an unbiased performance estimate, fit the threshold on one set of
 points and evaluate it on a separate, independent set. The points are therefore
 referred to as <i>reference points</i> rather than <i>validation points</i>.
 
-<h3>Outputs</h3>
+<h3><a name="outputs">Outputs</a></h3>
 
 The following outputs can be produced:
 
@@ -277,7 +479,7 @@ The <b>plot</b>, <b>roc_plot</b> and <b>boxplot</b> options write image files; t
 <b>plots</b> option selects which of the three figures are shown interactively in a
 window. They can be combined (save <i>and</i> show) or used on their own.
 
-<h2>NOTES</h2>
+<h2><a name="notes">NOTES</a></h2>
 
 By default a point is predicted as the positive class when the raster value is
 greater than or equal to the threshold. Use the <b>-r</b> flag to reverse the rule
@@ -338,7 +540,7 @@ plotting entirely (matplotlib is not imported), which is useful for automation. 
 see a plot in a window, choose an interactive backend and list the figure(s) in
 <b>plots</b>.
 
-<h2>EXAMPLE</h2>
+<h2><a name="example">EXAMPLE</a></h2>
 
 Find a good NDVI threshold to separate vegetated from non-vegetated points, write
 the candidate thresholds as JSON, save the plots, and also write a classified
@@ -386,7 +588,7 @@ r.class.threshold raster=ndvi map=field_plots column=vegetated \
 </pre>
 </div>
 
-<h2>SEE ALSO</h2>
+<h2><a name="see-also">SEE ALSO</a></h2>
 
 In short: <i>r.edm.eval</i> is built to <b>evaluate and compare model
 predictions</b>, while <i>r.class.threshold</i> is built to <b>select, document and
@@ -418,9 +620,36 @@ different jobs, however:
 <a href="https://grass.osgeo.org/grass-stable/manuals/addons/r.learn.train.html">r.learn.train</a>,
 <a href="https://grass.osgeo.org/grass-stable/manuals/addons/r.maxent.train.html">r.maxent.train</a></i>
 
-<h2>AUTHOR</h2>
+<h2><a name="author">AUTHOR</a></h2>
 
 <a href="https://ecodiv.earth">Paulo van Breugel</a>, <a href="https://has.nl">HAS
 green academy</a>, <a href="https://www.has.nl/en/research/professorships/innovative-bio-monitoring-professorship/">Innovative
 Biomonitoring research group</a>, <a href="https://www.has.nl/en/research/professorships/climate-robust-landscapes-professorship/">Climate-robust
 Landscapes research group</a>
+<h2>SOURCE CODE</h2>
+<p>
+  Available at:
+  <a href="">r.class.threshold source code</a>
+  (<a href="">history</a>)
+</p>
+<p>
+  Accessed: Sunday Jun 28 14:26:46 2026
+</p>
+<hr class="header">
+<p>
+<a href="file:///usr/local/grassmaster/grass86/docs/html/index.html">Main index</a> |
+<a href="file:///usr/local/grassmaster/grass86/docs/html/raster.html">Raster index</a> |
+<a href="file:///usr/local/grassmaster/grass86/docs/html/topics.html">Topics index</a> |
+<a href="file:///usr/local/grassmaster/grass86/docs/html/keywords.html">Keywords index</a> |
+<a href="file:///usr/local/grassmaster/grass86/docs/html/graphical_index.html">Graphical index</a> |
+<a href="file:///usr/local/grassmaster/grass86/docs/html/full_index.html">Full index</a>
+</p>
+<p>
+&copy; 2003-2026
+<a href="https://grass.osgeo.org">GRASS Development Team</a>,
+GRASS 8.6.0dev Reference Manual
+</p>
+
+</div>
+</body>
+</html>

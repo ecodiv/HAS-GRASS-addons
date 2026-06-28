@@ -2,6 +2,10 @@
 
 _**r.class.threshold**_ - Finds the optimal threshold for separating a continuous raster into two classes.
 
+> [!WARNING]  
+> This addon is work in progress. Use at your own risk. Do you encounter bugs of
+> do you have suggestions for improvements, please file a bug report.
+
 ## SYNOPSIS
 
 **r.class.threshold**  
