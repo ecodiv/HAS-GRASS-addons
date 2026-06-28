@@ -1,3 +1,11 @@
+## NAME
+
+_r.in.ahn.laz_: Downloads LAZ tiles from the AHN (Actueel Hoogtebestand Nederland (AHN), versions 2–6) overlapping with the computational region. Optionally runs a user-provided Python script for each downloaded tile, and patches the resulting raster layers.
+
+> [!WARNING]  
+> This addon is work in progress, with limited testing. Consider this an early alpha version!! Use at your own risk.
+> Do you encounter bugs of do you have suggestions for improvements, please file a bug report.
+
 ## DESCRIPTION
 
 _r.in.ahn.laz_ downloads 1 × 1 km LAZ point-cloud tiles from the _Actueel Hoogtebestand Nederland (AHN)_ that intersect the current computational region, and optionally processes each tile with a user-provided Python script and patches the per-tile results into a seamless mosaic.

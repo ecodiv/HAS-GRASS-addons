@@ -3,6 +3,10 @@
 _v.snap_: Snap points from a vector point map onto the nearest location on the
 features of a vector line map. Original categories and attributes are preserved.
 
+> [!WARNING]  
+> This addon is work in progress. Use at your own risk. Do you encounter bugs of
+> do you have suggestions for improvements, please file a bug report.
+
 ## DESCRIPTION
 
 *v.snap* snaps each point of an input vector point map onto the nearest location

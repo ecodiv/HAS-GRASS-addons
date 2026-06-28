@@ -1,3 +1,11 @@
+## NAME
+
+_i.in.aef_: Imports AlphaEarth Foundations satellite embedding COGs into GRASS GIS.
+
+> [!WARNING]  
+> This addon is work in progress, with limited testing. Consider this an early alpha version!! Use at your own risk.
+> Do you encounter bugs of do you have suggestions for improvements, please file a bug report.
+
 ## SYNOPSIS
 
 **i.in.aef**  
