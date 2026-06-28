@@ -8,69 +8,33 @@
 
 ### Flags:
 
-**\-l**
+**\-l** List available UTM zones, years, and tile counts, then exit
 
-List available UTM zones, years, and tile counts, then exit
+**\-q** Keep quantized (int8) bands, skip de-quantization
 
-**\-q**
+**\--help** Print usage summary
 
-Keep quantized (int8) bands, skip de-quantization
+**\--verbose** Verbose module output
 
-**\--help**
+**\--quiet** Quiet module output
 
-Print usage summary
-
-**\--verbose**
-
-Verbose module output
-
-**\--quiet**
-
-Quiet module output
-
-**\--ui**
-
-Force launching GUI dialog
+**\--ui** Force launching GUI dialog
 
 ### Parameters:
 
-**input**\=_name_ **\[required\]**
+**input**\=_name_ **\[required\]**: Path to the AEF tile index JSON file
 
-Path to the AEF tile index JSON file
+**prefix**\=_string_: Prefix layers for output map names (default: aef\_<zone>)
 
-**prefix**\=_string_
+**mapset**\=_string_: Mapset name
 
-Prefix layers
+**year**\=_integer_: Year to import (e.g. 2018, 2021). Default: _2024_
 
-Prefix for output map names (default: aef\_<zone>)
+**utm\_zone**\=_string_: UTM zone code to import (e.g. 44N)
 
-**mapset**\=_string_
+**memory**\=_integer_: Maximum memory to be used (in MB). Default: _300_
 
-mapset name
-
-Mapset name
-
-**year**\=_integer_
-
-Year to import (e.g. 2018, 2021)
-
-Default: _2024_
-
-**utm\_zone**\=_string_
-
-UTM zone code to import (e.g. 44N)
-
-**memory**\=_integer_
-
-Maximum memory to be used (in MB)
-
-Default: _300_
-
-**nprocs**\=_integer_
-
-Number of threads for parallel processing
-
-Default: _1_
+**nprocs**\=_integer_: Number of threads for parallel processing. Default: _1_
 
 ## DESCRIPTION
 
