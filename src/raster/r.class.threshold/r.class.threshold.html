@@ -1,0 +1,426 @@
+<h2>DESCRIPTION</h2>
+
+<i>r.class.threshold</i> helps to find a good threshold for separating a raster
+with continuous values (such as an NDVI map) into two classes. The threshold is
+evaluated against observed reference data supplied as a vector point layer whose
+attribute table contains a column with two classes: the <b>positive</b> (target /
+presence) class and the <b>negative</b> (non-target / absence) class. By default
+these are coded <b>1</b> and <b>0</b>, but any two distinct values can be used
+through the <b>positive_value</b> and <b>negative_value</b> options (for example
+<i>presence</i>/<i>absence</i>, <i>yes</i>/<i>no</i>, <i>true</i>/<i>false</i>, or
+species-specific codes).
+
+<p>
+The module reports candidate thresholds, diagnostic statistics, and plots. It
+does <i>not</i> by itself produce a classified map, but it can optionally write
+one (see <b>classified_output</b> below).
+
+<h3>Confusion matrix</h3>
+
+The module samples the input <b>raster</b> at every reference point. It then
+computes, for the empirical breakpoints of the sampled values, a confusion
+matrix. This is done as follows.
+
+<p>
+At a given threshold <i>t</i>, each reference point is assigned a predicted class
+and compared with its observed class. By default a point is predicted as the
+positive class when the raster value is greater than or equal to the threshold
+(<tt>value &gt;= t</tt>); with the <b>-r</b> flag the rule is reversed
+(<tt>value &lt;= t</tt>), which is appropriate when low values indicate the
+target class. This gives four counts:
+
+<ul>
+  <li><b>TP</b> -- observed positive, predicted positive (true positive)</li>
+  <li><b>FP</b> -- observed negative, predicted positive (false positive)</li>
+  <li><b>FN</b> -- observed positive, predicted negative (false negative)</li>
+  <li><b>TN</b> -- observed negative, predicted negative (true negative)</li>
+</ul>
+
+with <tt>N = TP + FP + FN + TN</tt> the total number of reference points.
+
+<h3>Statistics and formulas</h3>
+
+Each candidate threshold is described by the following per-threshold statistics:
+
+<table border="1">
+  <tr>
+    <th>Statistic</th>
+    <th>Formula</th>
+    <th>Meaning</th>
+  </tr>
+  <tr>
+    <td>Sensitivity (TPR, recall)</td>
+    <td><tt>TP / (TP + FN)</tt></td>
+    <td>Share of observed positives correctly predicted (left y-axis of the plot)</td>
+  </tr>
+  <tr>
+    <td>Specificity (TNR)</td>
+    <td><tt>TN / (TN + FP)</tt></td>
+    <td>Share of observed negatives correctly predicted (right y-axis of the plot)</td>
+  </tr>
+  <tr>
+    <td>Precision</td>
+    <td><tt>TP / (TP + FP)</tt></td>
+    <td>Share of predicted positives that are correct</td>
+  </tr>
+  <tr>
+    <td>Recall</td>
+    <td><tt>TP / (TP + FN)</tt></td>
+    <td>Identical to sensitivity</td>
+  </tr>
+  <tr>
+    <td>Accuracy</td>
+    <td><tt>(TP + TN) / N</tt></td>
+    <td>Overall fraction of correctly classified points</td>
+  </tr>
+  <tr>
+    <td>Balanced accuracy</td>
+    <td><tt>(sensitivity + specificity) / 2</tt></td>
+    <td>Accuracy averaged over the two classes; robust to class imbalance</td>
+  </tr>
+  <tr>
+    <td>F1 score</td>
+    <td><tt>2 * TP / (2 * TP + FP + FN)</tt></td>
+    <td>Harmonic mean of precision and recall</td>
+  </tr>
+  <tr>
+    <td>Youden's J</td>
+    <td><tt>sensitivity + specificity - 1</tt></td>
+    <td>Ranges from -1 to 1; 0 means no better than chance</td>
+  </tr>
+  <tr>
+    <td>True Skill Statistic (TSS)</td>
+    <td><tt>sensitivity + specificity - 1</tt></td>
+    <td>Numerically identical to Youden's J</td>
+  </tr>
+  <tr>
+    <td>Cohen's kappa (k)</td>
+    <td><tt>(p_o - p_e) / (1 - p_e)</tt></td>
+    <td>Agreement corrected for chance (see below)</td>
+  </tr>
+</table>
+
+<p>
+For Cohen's kappa, the observed agreement is the accuracy
+(<tt>p_o = (TP + TN) / N</tt>) and the expected (chance) agreement is:
+
+<div class="code">
+  <pre>
+p_e = [ (TP + FP)(TP + FN) + (FN + TN)(FP + TN) ] / N^2
+</pre>
+</div>
+
+<p>
+The <b>AUC</b> (Area Under the ROC Curve) is reported once for the whole dataset
+and is computed exactly from the rank-sum (Mann-Whitney) statistic, which is
+tie-aware and independent of the number of <b>steps</b>:
+
+<div class="code">
+  <pre>
+AUC = ( R1 - n1 * (n1 + 1) / 2 ) / ( n1 * n0 )
+</pre>
+</div>
+
+<p>
+where <tt>R1</tt> is the sum of the (midrank) ranks of the raster values at the
+positive points after ranking all points by raster value, <tt>n1</tt> is the
+number of positive points and <tt>n0</tt> the number of negative points.
+
+<h3>Selection criteria</h3>
+
+The candidate-threshold table reports one row per criterion. Every criterion is
+always listed in the output table; the <b>criterion</b> option only controls
+which of them are drawn as reference lines on the plots. Each criterion selects
+the threshold <i>t*</i> that optimises a combination of the statistics above:
+
+<table border="1">
+  <tr>
+    <th>Criterion</th>
+    <th>Selected threshold</th>
+  </tr>
+  <tr>
+    <td><tt>max_youden_j</tt></td>
+    <td><tt>t* = argmax_t [ sensitivity(t) + specificity(t) - 1 ]</tt></td>
+  </tr>
+  <tr>
+    <td><tt>equal_sens_spec</tt></td>
+    <td><tt>t* = argmin_t | sensitivity(t) - specificity(t) |</tt></td>
+  </tr>
+  <tr>
+    <td><tt>closest_topleft</tt></td>
+    <td><tt>t* = argmin_t [ (1 - sensitivity(t))^2 + (1 - specificity(t))^2 ]</tt></td>
+  </tr>
+  <tr>
+    <td><tt>max_accuracy</tt></td>
+    <td><tt>t* = argmax_t accuracy(t)</tt></td>
+  </tr>
+  <tr>
+    <td><tt>max_f1</tt></td>
+    <td><tt>t* = argmax_t F1(t)</tt></td>
+  </tr>
+  <tr>
+    <td><tt>max_kappa</tt></td>
+    <td><tt>t* = argmax_t kappa(t)</tt></td>
+  </tr>
+</table>
+
+<p>
+<b>Aliases.</b> Several popular criteria are <i>mathematically identical</i> to
+<tt>max_youden_j</tt> and therefore always select the same threshold, so they are
+not reported as separate rows:
+
+<ul>
+  <li>The <b>True Skill Statistic (TSS)</b> equals Youden's J exactly
+    (<tt>sensitivity + specificity - 1</tt>).</li>
+  <li><b>Maximum balanced accuracy</b> maximises
+    <tt>(sensitivity + specificity) / 2</tt>, which differs from Youden's J only
+    by an additive/multiplicative constant and so has the same maximiser.</li>
+</ul>
+
+<p>
+The <tt>max_youden_j</tt> row therefore also gives you the TSS-optimal and
+balanced-accuracy-optimal threshold. (The balanced-accuracy <i>value</i> is still
+reported, as the <tt>balanced_accuracy</tt> field, for every criterion.) "Maximum
+sensitivity" and "maximum recall" alone are degenerate -- any threshold below the
+smallest value attains them -- and are likewise not offered.
+
+<p>
+Classifier performance is frequently constant over a whole <i>interval</i> of
+thresholds rather than at a single point. When the optimum forms such a plateau,
+the row reports the plateau bounds as <tt>threshold_lo</tt> and
+<tt>threshold_hi</tt>, and <tt>threshold</tt> is their midpoint (a representative
+value). The plateau is always a single <i>contiguous</i> run of optimal
+breakpoints: if the optimum is attained at several disjoint locations, the longest
+contiguous run is chosen (and, between equally long runs, the most central one),
+so the reported <tt>threshold</tt> is itself an optimum rather than a midpoint
+spanning a gap. For an isolated optimum, all three values coincide. The confusion
+counts and metrics in the row are taken at the representative threshold.
+
+<p>
+By default two thresholds are treated as tied optima only when their scores are
+<i>exactly</i> equal. This avoids silently merging near-optima -- for example a
+one-observation difference in accuracy on a large dataset -- into a single
+plateau. If you want a tolerance, set <b>tie_tolerance</b> to a small positive
+value (interpreted as in <tt>numpy.isclose</tt>, i.e. combined relative and
+absolute).
+
+<p>
+Each criterion is described by <tt>threshold</tt>, <tt>threshold_lo</tt>,
+<tt>threshold_hi</tt>, TP, FP, FN, TN, sensitivity, specificity, accuracy,
+balanced accuracy, precision, recall, the F1 score, Youden's J and Cohen's kappa.
+Where a statistic is mathematically undefined (for example kappa when
+<tt>1 - p_e = 0</tt>), it is reported as <tt>NA</tt> in plain/CSV output and as
+<tt>null</tt> in JSON. The AUC is reported in the on-screen message and, for JSON
+output, in the <tt>summary</tt> object.
+
+<p>
+In the <b>plain-text</b> output the table is <i>transposed</i>: one row per
+statistic and one column per criterion. This keeps the table narrow and readable
+as the number of statistics grows. The <b>CSV</b> and <b>JSON</b> output keep the
+conventional one-record-per-criterion layout for easy machine processing.
+
+<p>
+Numeric values in the JSON and CSV output are written at full precision; the
+plain-text table rounds the rate metrics for readability but keeps the thresholds
+at high precision. The full-precision threshold matters for rasters whose
+meaningful values are very small or very large.
+
+<p>
+Note that the AUC measures the overall ranking quality of the raster as a
+predictor and is independent of any single threshold; it is reported alongside the
+thresholds for context, not as a validation of the chosen threshold itself.
+
+<h3>Choosing a criterion</h3>
+
+For balanced classes, <tt>max_accuracy</tt> is reasonable. For <b>imbalanced</b>
+classes it can be misleading (a classifier that always predicts the majority class
+can have high accuracy), and <tt>max_f1</tt> ignores true negatives entirely. In
+those cases <tt>max_youden_j</tt> (equivalently, maximum balanced accuracy or TSS)
+or <tt>max_kappa</tt> are usually more informative. If the target class is rare and
+you care primarily about it, a precision-recall view (the <tt>precision</tt> and
+<tt>recall</tt> fields) is more telling than ROC/AUC.
+
+<h3>Calibration vs validation</h3>
+
+The same point set is used both to choose the threshold and to report the
+statistics at that threshold. This is threshold <i>calibration</i>, not
+independent <i>validation</i>: statistics reported at the selected threshold are
+optimistic because the threshold was chosen to optimise them on these very points.
+If you need an unbiased performance estimate, fit the threshold on one set of
+points and evaluate it on a separate, independent set. The points are therefore
+referred to as <i>reference points</i> rather than <i>validation points</i>.
+
+<h3>Outputs</h3>
+
+The following outputs can be produced:
+
+<ul>
+  <li>A <b>plot</b> (file) and/or interactive window showing the threshold on the
+    x-axis, the percentage of correctly predicted positives (sensitivity) on the
+    left y-axis and the percentage of correctly predicted negatives (specificity)
+    on the right y-axis.</li>
+  <li>A <b>roc_plot</b> showing the Receiver Operating Characteristic (ROC) curve
+    together with the Area Under the Curve (AUC).</li>
+  <li>A <b>boxplot</b> of the raster values grouped by observed class.</li>
+  <li>A table of candidate thresholds (<b>output</b>) in the selected
+    <b>format</b> (plain text, CSV or JSON).</li>
+  <li>Optionally, a classified binary raster (<b>classified_output</b>), produced
+    by applying the threshold of the criterion named in <b>apply_criterion</b>.
+    Without <b>-r</b> the output is 1 where <tt>value &gt;= threshold</tt> and 0
+    otherwise; with <b>-r</b> it is 1 where <tt>value &lt;= threshold</tt>. NULL
+    cells stay NULL.</li>
+</ul>
+
+<p>
+Saving a plot to a file and displaying it on screen are controlled independently.
+The <b>plot</b>, <b>roc_plot</b> and <b>boxplot</b> options write image files; the
+<b>plots</b> option selects which of the three figures are shown interactively in a
+window. They can be combined (save <i>and</i> show) or used on their own.
+
+<h2>NOTES</h2>
+
+By default a point is predicted as the positive class when the raster value is
+greater than or equal to the threshold. Use the <b>-r</b> flag to reverse the rule
+(predict positive where the value is less than or equal to the threshold) when low
+values indicate the target class. The active rule is shown in the plot titles and
+in the JSON <tt>summary</tt>.
+
+<p>
+The <b>steps</b> option controls only the resolution of the
+sensitivity/specificity plot. The reported optimal thresholds are computed on the
+empirical breakpoints of the sampled values, and the AUC and ROC curve are
+computed from the empirical value distribution, so all of these are independent of
+<b>steps</b>. Increasing <b>steps</b> does <i>not</i> give a more accurate
+threshold table.
+
+<p>
+The <b>range</b> option controls the value span of the sensitivity/specificity plot
+x-axis. The default <tt>raster</tt> spans the full raster min/max. If the raster
+contains extreme values that are not represented among the reference points, the
+informative part of the curve can be compressed; <tt>range=sample</tt> then spans
+only the range of the sampled reference values.
+
+<p>
+The <b>criterion</b> option only selects which thresholds are drawn as reference
+lines on the plots; the output table always lists every criterion. Use
+<tt>criterion=all</tt> to draw a reference line for every criterion at once instead
+of listing them individually. Criteria that share a threshold (which is common,
+since several criteria often agree) are merged into a single line in the legend.
+
+<p>
+The <b>plots</b> option selects which figures are shown interactively
+(<tt>threshold</tt>, <tt>roc</tt>, <tt>boxplot</tt>, or any combination). If
+<b>plots</b> is left empty, nothing is displayed on screen, even with an
+interactive backend; this is the right setting for batch/scripted use where you
+only want files or the table. Showing a plot interactively needs an interactive
+<b>backend</b> (for example <tt>QtAgg</tt> or <tt>TkAgg</tt>) and an available
+display.
+
+<p>
+Points that fall outside the raster (NULL), or whose observed value matches neither
+<b>positive_value</b> nor <b>negative_value</b>, are ignored with a warning. The
+column must contain both classes.
+
+<p>
+The module copies the reference vector to a uniquely named temporary map before
+sampling so the user's data is never modified; the copy is removed on exit. For
+very large reference datasets this copy can be expensive in time and disk space.
+The temporary sampled-value column and the temporary vector both use collision-safe
+generated names, and the <b>layer</b> option is honoured throughout, so non-default
+layers work correctly.
+
+<p>
+The plots require the Python <i>matplotlib</i> package and the computation requires
+<i>numpy</i>. If a plot output file is given, the image format is taken from the
+file extension (for example <tt>.png</tt>, <tt>.pdf</tt> or <tt>.svg</tt>). The
+<b>backend</b> option selects the matplotlib backend; <tt>backend=no_plot</tt> skips
+plotting entirely (matplotlib is not imported), which is useful for automation. To
+see a plot in a window, choose an interactive backend and list the figure(s) in
+<b>plots</b>.
+
+<h2>EXAMPLE</h2>
+
+Find a good NDVI threshold to separate vegetated from non-vegetated points, write
+the candidate thresholds as JSON, save the plots, and also write a classified
+raster using the Youden-optimal threshold:
+
+<div class="code">
+  <pre>
+r.class.threshold raster=ndvi map=field_plots column=vegetated \
+    steps=200 format=json output=thresholds.json \
+    plot=ndvi_sensspec.png roc_plot=ndvi_roc.png \
+    classified_output=ndvi_binary apply_criterion=max_youden_j
+</pre>
+</div>
+
+<p>
+Use textual class codes and write the candidate thresholds as CSV to standard
+output:
+
+<div class="code">
+  <pre>
+r.class.threshold raster=ndvi map=field_plots column=landcover \
+    positive_value=vegetated negative_value=bare format=csv
+</pre>
+</div>
+
+<p>
+Reverse the rule (low values indicate the target) and only run the table, with no
+plotting, for use in a script:
+
+<div class="code">
+  <pre>
+r.class.threshold raster=depth map=sites column=present -r \
+    backend=no_plot format=json output=thresholds.json
+</pre>
+</div>
+
+<p>
+Show the ROC curve and boxplot interactively, drawing a reference line for every
+criterion, without saving any image files:
+
+<div class="code">
+  <pre>
+r.class.threshold raster=ndvi map=field_plots column=vegetated \
+    plots=roc,boxplot criterion=all backend=QtAgg
+</pre>
+</div>
+
+<h2>SEE ALSO</h2>
+
+In short: <i>r.edm.eval</i> is built to <b>evaluate and compare model
+predictions</b>, while <i>r.class.threshold</i> is built to <b>select, document and
+apply a classification threshold</b>. Both compute the same diagnostic core, so the
+choice is about emphasis.
+
+<p>
+<i>r.class.threshold</i> and
+<i><a href="https://grass.osgeo.org/grass-stable/manuals/addons/r.edm.eval.html">r.edm.eval</a></i>
+overlap in their diagnostic core -- both compute a confusion matrix across
+thresholds, ROC/AUC, the true skill statistic (TSS, equivalent to Youden's J) and
+Cohen's kappa, and report the thresholds that optimise them. They are built for
+different jobs, however:
+
+<ul>
+  <li>Use <i>r.class.threshold</i> when the reference data are <b>vector points</b>
+    sampled against a single raster, when you want exact (non-binned) optima over a
+    wider set of criteria, or when you need the <b>classified binary raster</b>
+    produced at the chosen threshold.</li>
+  <li>Use <i>r.edm.eval</i> when the reference and the prediction are both
+    <b>raster layers</b> (every cell is an observation), when comparing <b>several
+    prediction layers</b> at once, or when you need species-distribution-modelling
+    features such as background-point handling, an absence buffer, or prevalence
+    adjustment.</li>
+</ul>
+
+<p>
+<i><a href="https://grass.osgeo.org/grass-stable/manuals/addons/r.edm.eval.html">r.edm.eval</a>,
+<a href="https://grass.osgeo.org/grass-stable/manuals/addons/r.learn.train.html">r.learn.train</a>,
+<a href="https://grass.osgeo.org/grass-stable/manuals/addons/r.maxent.train.html">r.maxent.train</a></i>
+
+<h2>AUTHOR</h2>
+
+<a href="https://ecodiv.earth">Paulo van Breugel</a>, <a href="https://has.nl">HAS
+green academy</a>, <a href="https://www.has.nl/en/research/professorships/innovative-bio-monitoring-professorship/">Innovative
+Biomonitoring research group</a>, <a href="https://www.has.nl/en/research/professorships/climate-robust-landscapes-professorship/">Climate-robust
+Landscapes research group</a>
