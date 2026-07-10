@@ -4,13 +4,14 @@
 #
 # AUTHOR(S): Paulo van Breugel
 #
-# PURPOSE:   Find the optimal threshold for converting a continuous raster
-#            (e.g. NDVI) into two classes, evaluated against a set of
-#            reference points whose attribute table holds the observed class.
-#            Produces a sensitivity/specificity-vs-threshold plot, a ROC/AUC
-#            plot, a raster-value boxplot by observed class, a table of
-#            candidate thresholds (one per optimisation criterion) as plain
-#            text, CSV or JSON, and optionally a classified binary raster.
+# PURPOSE:   Select thresholds for converting a continuous raster (e.g. NDVI)
+#            into two classes, evaluated against a set of reference points
+#            whose attribute table holds the observed class. One threshold is
+#            selected per optimisation criterion. It furthermore produces a
+#            sensitivity/specificity-vs-threshold plot, a ROC/AUC plot,
+#            a raster-value boxplot by observed class, a table of selected
+#            thresholds (one per optimisation criterion) as plain text,
+#            CSV or JSON, and optionally a classified binary raster.
 #
 # COPYRIGHT: (C) 2026 by Paulo van Breugel and the GRASS Development Team
 #
@@ -20,7 +21,7 @@
 ##############################################################################
 
 # %module
-# % description: Finds the optimal threshold for separating a continuous raster into two classes.
+# % description: Selects thresholds for separating a continuous raster into two classes.
 # % keyword: raster
 # % keyword: threshold
 # % keyword: classification
@@ -29,10 +30,6 @@
 # % keyword: AUC
 # % keyword: validation
 # %end
-
-# ----------------------------------------------------------------------------
-# Input
-# ----------------------------------------------------------------------------
 
 # %option G_OPT_R_INPUT
 # % key: raster
@@ -82,15 +79,11 @@
 # % guisection: Input
 # %end
 
-# ----------------------------------------------------------------------------
-# Output (threshold table and optional classified raster)
-# ----------------------------------------------------------------------------
-
 # %option G_OPT_F_OUTPUT
 # % key: output
 # % required: no
 # % label: Threshold table file
-# % description: File for the candidate-threshold table. Default is standard output.
+# % description: File for the selected-threshold table. Default is standard output.
 # % guisection: Output
 # %end
 
@@ -124,10 +117,6 @@
 # % guisection: Output
 # %end
 
-# ----------------------------------------------------------------------------
-# Plots
-# ----------------------------------------------------------------------------
-
 # %option
 # % key: plots
 # % type: string
@@ -135,7 +124,7 @@
 # % multiple: yes
 # % options: threshold,roc,boxplot
 # % label: Plots to display interactively
-# % description: Which plots to show in a window (needs an interactive backend and a display). If none are given, no plot is shown interactively; saving to a file is controlled separately by plot=, roc_plot= and boxplot=.
+# % description: Plots to show in a window. Requires an interactive backend and display. If none are given, no plot is shown interactively. File output is controlled separately by plot=, roc_plot= and boxplot=.
 # % guisection: Plots
 # %end
 
@@ -197,10 +186,6 @@
 # % guisection: Plots
 # %end
 
-# ----------------------------------------------------------------------------
-# Settings (computation and environment tuning)
-# ----------------------------------------------------------------------------
-
 # %option
 # % key: backend
 # % type: string
@@ -224,7 +209,7 @@
 
 # %flag
 # % key: r
-# % label: Reverse rule (class 1 where value is below the threshold)
+# % label: Reverse rule (class 1 at or below the threshold)
 # % description: Use when low raster values indicate the target class
 # %end
 
@@ -236,9 +221,8 @@ import sys
 
 import grass.script as gs
 
-# GRASS installs the gettext _() helper into builtins at runtime; provide a
-# no-op fallback so the module also imports cleanly outside a GRASS session.
-# It also avoids linter errors in e.g., Positron
+# GRASS installs the gettext _() helper into builtins at runtime.
+# Helps to avoid linter errors in e.g., Positron
 try:
     _
 except NameError:
@@ -247,18 +231,11 @@ except NameError:
         return string
 
 
-# ---------------------------------------------------------------------------
-# Module-level constants: criteria and output fields are referenced in several
-# places (selection, plotting, table writing). Defining them once avoids
-# accidental mismatches between, e.g., the row keys and the CSV header.
-# ---------------------------------------------------------------------------
-
+# Module-level constants
 # Criteria reported in the table, one row each. The True Skill Statistic (TSS)
-# and "maximum balanced accuracy" are mathematical aliases of max_youden_j -
-# all three maximise sensitivity + specificity - 1 - so they are NOT reported
-# as separate rows; the manual documents them as alternative names. Likewise
-# "max recall" / "max sensitivity" alone are degenerate (any threshold below
-# the data maximises them) and are not offered.
+# and "maximum balanced accuracy" are mathematical the same as max_youden_j -
+# all three maximise sensitivity + specificity - 1. So they are not reported
+# as separate rows
 CRITERIA = (
     "max_youden_j",
     "equal_sens_spec",
@@ -268,7 +245,7 @@ CRITERIA = (
     "max_kappa",
 )
 
-# Alternative names for max_youden_j, surfaced in the JSON summary and manual.
+# Alternative names for max_youden_j.
 YOUDEN_ALIASES = ("max_youden_j", "max_tss", "max_balanced_accuracy")
 
 TABLE_FIELDS = (
@@ -291,8 +268,7 @@ TABLE_FIELDS = (
     "kappa",
 )
 
-# Non-interactive matplotlib backends: these only write files and never open a
-# window. Anything else is treated as interactive.
+# Non-interactive matplotlib backends.
 NON_INTERACTIVE_BACKENDS = {"agg", "cairo", "pdf", "pgf", "ps", "svg", "template"}
 
 TMP_VECTOR = None
@@ -306,7 +282,7 @@ def cleanup():
 
             Tools().g_remove(type="vector", name=TMP_VECTOR, flags="f", quiet=True)
         except Exception as exc:  # noqa: BLE001 - cleanup must not raise
-            gs.debug("cleanup failed to remove <%s>: %s" % (TMP_VECTOR, exc))
+            gs.debug(f"cleanup failed to remove <{TMP_VECTOR}>: {exc}")
 
 
 def _unique_column_name(tools, vector, layer):
@@ -320,7 +296,6 @@ def _unique_column_name(tools, vector, layer):
         name = "rct_" + gs.tempname(8)
         if name.lower() not in existing_lower:
             return name
-    # Extremely unlikely; surface a clear error rather than colliding silently.
     gs.fatal(_("Could not generate a unique temporary column name"))
 
 
@@ -329,26 +304,24 @@ def sample_points(tools, raster, points, column, layer, positive_value, negative
 
     Returns two lists: observed classes (int 0/1) and raster values (float).
     Points outside the raster (NULL) or whose class column does not match
-    ``positive_value`` or ``negative_value`` are dropped with a warning.
+    positive_value or negative_value are dropped with a warning.
 
     Class parsing is strict: a value is class 1 only if it equals
-    ``positive_value`` and class 0 only if it equals ``negative_value``.
+    positive_value and class 0 only if it equals negative_value.
     Numeric comparison is used when both sides parse as finite floats,
-    otherwise a case-sensitive string comparison is used (so 'presence' /
-    'absence', 'yes' / 'no', 'true' / 'false', species codes, etc. all work).
+    otherwise a case-sensitive string comparison is used.
     """
     global TMP_VECTOR
-    TMP_VECTOR = "tmp_rclassthr_%s" % gs.tempname(12)
+    TMP_VECTOR = f"tmp_rclassthr_{gs.tempname(12)}"
 
-    # Work on a copy so the user's vector is never modified. The name is
-    # unpredictable (gs.tempname), so overwrite is unnecessary and unsafe.
+    # Work on a copy so the user's vector is never modified.
     tools.g_copy(vector=(points, TMP_VECTOR))
 
     rast_col = _unique_column_name(tools, TMP_VECTOR, layer)
     tools.v_db_addcolumn(
         map=TMP_VECTOR,
         layer=layer,
-        columns="%s double precision" % rast_col,
+        columns=f"{rast_col} double precision",
     )
     tools.v_what_rast(
         map=TMP_VECTOR,
@@ -360,14 +333,14 @@ def sample_points(tools, raster, points, column, layer, positive_value, negative
     # JSON output gives native types: NULLs come back as None.
     result = tools.v_db_select(
         map=TMP_VECTOR,
-        columns="%s,%s" % (column, rast_col),
+        columns=f"{column},{rast_col}",
         format="json",
         layer=layer,
     )
     try:
         records = result["records"]
     except (KeyError, TypeError):
-        gs.fatal(_("Could not read sampled values from <%s>") % points)
+        gs.fatal(_("Could not read sampled values from <{}>").format(points))
 
     def as_float(token):
         try:
@@ -382,7 +355,9 @@ def sample_points(tools, raster, points, column, layer, positive_value, negative
     neg_s = str(negative_value)
     if pos_s == neg_s or (pos_f is not None and neg_f is not None and pos_f == neg_f):
         gs.fatal(
-            _("positive_value and negative_value must differ (both are '%s')") % pos_s
+            _("positive_value and negative_value must differ (both are '{}')").format(
+                pos_s
+            )
         )
 
     def classify(obs):
@@ -424,10 +399,9 @@ def sample_points(tools, raster, points, column, layer, positive_value, negative
     if skipped:
         gs.warning(
             _(
-                "%d point(s) skipped (NULL raster value, or class not equal to "
-                "positive_value '%s' / negative_value '%s')"
-            )
-            % (skipped, pos_s, neg_s)
+                "{} point(s) skipped (NULL raster value, or class not equal to "
+                "positive_value '{}' / negative_value '{}')"
+            ).format(skipped, pos_s, neg_s)
         )
     return observed, values
 
@@ -450,12 +424,11 @@ def confusion(thresholds, values, observed, reverse):
     """Confusion-matrix counts for every threshold.
 
     Returns TP, FP, FN, TN as integer arrays, one entry per threshold.
-    Without ``reverse``, a point is predicted positive when value >= threshold;
-    with ``reverse`` set, when value <= threshold.
+    Without reverse, a point is predicted positive when value >= threshold;
+    with reverse set, when value <= threshold.
 
-    Implemented with ``np.searchsorted`` on the sorted positive/negative value
-    arrays, so memory use is O(n_points + n_thresholds) rather than
-    O(n_points * n_thresholds).
+    Implemented with np.searchsorted on the sorted positive/negative value
+    arrays to reduce memory use (O(n_points + n_thresholds)).
     """
     import numpy as np
 
@@ -491,8 +464,8 @@ def metrics(tp, fp, fn, tn):
     """Derive rate metrics from confusion-matrix arrays.
 
     Returns sensitivity, specificity, accuracy, balanced_accuracy, precision,
-    f1, youden_j and kappa. Recall is identical to sensitivity and is not
-    returned separately.
+    f1, youden_j and kappa. Recall is identical to sensitivity (And TPR) and
+    is not returned separately.
     """
     import numpy as np
 
@@ -525,8 +498,9 @@ def roc_auc(values, observed, reverse):
     The curve (for plotting) is built by placing thresholds between
     consecutive unique raster values, so it reflects the data rather than the
     plotting grid. The AUC is computed exactly from the rank-sum
-    (Mann-Whitney) statistic, which is tie-aware. Returns sorted FPR, sorted
-    TPR and the AUC.
+    (Mann-Whitney) statistic, which is tie-aware. With reverse, ranks are
+    based on negated raster values so larger scores still indicate the positive
+    class. Returns sorted FPR, sorted TPR and the AUC.
     """
     import numpy as np
 
@@ -592,15 +566,21 @@ def tied_runs(indices):
 def argbest(thr, score, mode, tie_tolerance):
     """Locate the optimal plateau of a score array.
 
-    ``thr`` are the threshold values (used to order ties and to pick a
-    representative), ``score`` is the per-threshold criterion, ``mode`` is
-    'max' or 'min'. ``tie_tolerance`` is the relative+absolute tolerance for
+    thr are the threshold values (used to order ties and to pick a
+    representative), score is the per-threshold criterion, mode is
+    'max' or 'min'. tie_tolerance is the relative+absolute tolerance for
     treating scores as tied (0 means exact equality).
 
     Returns (rep_index, lo_index, hi_index) where lo/hi bound a single
-    *contiguous* optimal plateau (ordered by threshold) and rep is the index
-    within that plateau closest to its midpoint. NaNs are ignored. The midpoint
-    is never taken across a gap between disjoint optima.
+    contiguous run of tied empirical candidates (ordered by threshold) and rep
+    is the candidate within that run closest to its midpoint. NaNs are ignored.
+    The midpoint is never taken across a gap between disjoint optima.
+
+    rep is an actual candidate, not the interpolated midpoint, because callers
+    report thr[rep] as the threshold alongside the counts and metrics taken at
+    that same index. For an even-length run, np.argmin resolves the two equally
+    central candidates to the lower one; a threshold nudged low is the safer
+    default because it errs toward predicting the positive class.
     """
     import numpy as np
 
@@ -664,8 +644,9 @@ def best_candidates(thresholds, tp, fp, fn, tn, tie_tolerance):
         rows.append(
             {
                 "criterion": name,
-                # Full precision is kept; formatting happens only for plain text.
-                "threshold": float(0.5 * (thr[lo] + thr[hi])),
+                # Report the same empirical candidate used for the counts and
+                # metrics below (index i).
+                "threshold": float(thr[i]),
                 "threshold_lo": float(thr[lo]),
                 "threshold_hi": float(thr[hi]),
                 "tp": int(tp[i]),
@@ -705,7 +686,7 @@ def _fmt(value, field=None):
 
 
 def write_table(rows, summary, fmt, output):
-    """Write the candidate-threshold table in the requested format.
+    """Write the selected-threshold table in the requested format.
 
     JSON and CSV carry full-precision numeric values; only the plain-text table
     applies display formatting.
@@ -720,7 +701,7 @@ def write_table(rows, summary, fmt, output):
             out = open(output, "w", newline="", encoding="utf-8")
             close = True
     except OSError as exc:
-        gs.fatal(_("Unable to open output file <%s>: %s") % (output, exc))
+        gs.fatal(_("Unable to open output file <{}>: {}").format(output, exc))
 
     try:
         if fmt == "json":
@@ -743,8 +724,6 @@ def write_table(rows, summary, fmt, output):
                 )
         else:  # plain
             # Transposed layout: one row per field, one column per criterion.
-            # This keeps the table narrow (it grows downward, not sideways) and
-            # stays readable as the number of metrics grows.
             crit_names = [r["criterion"] for r in rows]
             label_w = max((len(f) for f in fields), default=0)
             col_cells = {
@@ -757,8 +736,7 @@ def write_table(rows, summary, fmt, output):
                 )
                 for name in crit_names
             }
-            # "criterion" is the field that names each column, so it is not also
-            # printed as a row; it becomes the header instead.
+            # "criterion" is the field that names each column
             body_fields = [f for f in fields if f != "criterion"]
 
             header = (
@@ -785,42 +763,37 @@ def write_table(rows, summary, fmt, output):
 def classify_raster(tools, raster, output, threshold, reverse):
     """Write a binary 0/1 raster by thresholding the input raster.
 
-    Without ``reverse``: 1 where value >= threshold, else 0.
-    With ``reverse``:    1 where value <= threshold, else 0.
+    Without reverse: 1 where value >= threshold, else 0.
+    With reverse:    1 where value <= threshold, else 0.
     NULL cells stay NULL.
     """
     if threshold is None or (isinstance(threshold, float) and math.isnan(threshold)):
         gs.warning(
-            _("Selected criterion has no defined threshold; <%s> not created") % output
+            _("Selected criterion has no defined threshold; <{}> not created").format(
+                output
+            )
         )
         return
     op = "<=" if reverse else ">="
-    expr = "%s = if(isnull(%s), null(), if(%s %s %.17g, 1, 0))" % (
-        output,
-        raster,
-        raster,
-        op,
-        float(threshold),
+    expr = (
+        f"{output} = if(isnull({raster}), null(), "
+        f"if({raster} {op} {float(threshold):.17g}, 1, 0))"
     )
     tools.r_mapcalc(expression=expr)
     gs.message(
-        _("Classified raster <%s> created (class 1 where %s %s %.12g)")
-        % (output, raster, op, float(threshold))
+        _("Classified raster <{}> created (class 1 where {} {} {:.12g})").format(
+            output, raster, op, float(threshold)
+        )
     )
 
 
-# ---------------------------------------------------------------------------
-# Plotting (split into focused helpers so each piece can be tested or reused).
-# ---------------------------------------------------------------------------
-
-
+# Plotting, split into helpers
 def _activate_backend(matplotlib, backend_opt, save_mode, want_show):
     """Select the matplotlib backend without mutating os.environ.
 
     Honours an explicit backend choice (option or pre-set MPLBACKEND). With no
-    explicit choice, picks Agg only when we are purely saving (or headless) and
-    the user did not ask to display anything; otherwise leaves matplotlib's
-    default selection alone so an interactive window can open.
+    explicit choice, picks Agg  when we are purely saving; otherwise leaves
+    matplotlib's default selection alone so an interactive window can open.
     """
     explicit = ""
     if backend_opt not in ("default", "no_plot"):
@@ -833,8 +806,9 @@ def _activate_backend(matplotlib, backend_opt, save_mode, want_show):
             matplotlib.use(explicit, force=True)
         except Exception as exc:  # noqa: BLE001
             gs.warning(
-                _("Backend '%s' could not be activated (%s); using Agg instead")
-                % (explicit, exc)
+                _("Backend '{}' could not be activated ({}); using Agg instead").format(
+                    explicit, exc
+                )
             )
             matplotlib.use("Agg", force=True)
     elif not want_show and (save_mode or not os.environ.get("DISPLAY")):
@@ -902,7 +876,7 @@ def _stacked_legend_entries(ax, merged, ref_colors):
             lw=1.2,
         )
         handles.append(line)
-        labels.append("%s (%.4g)" % (crit_labels[0], thr_val))
+        labels.append(f"{crit_labels[0]} ({thr_val:.4g})")
         # Remaining names: blank handle so only the text shows, indented under
         # the first name.
         for extra in crit_labels[1:]:
@@ -925,7 +899,7 @@ def _stacked_legend_entries_h(ax, merged, ref_colors):
             lw=1.2,
         )
         handles.append(line)
-        labels.append("%s (%.4g)" % (crit_labels[0], thr_val))
+        labels.append(f"{crit_labels[0]} ({thr_val:.4g})")
         for extra in crit_labels[1:]:
             handles.append(Line2D([], [], linestyle="none", marker="none"))
             labels.append(extra)
@@ -962,7 +936,7 @@ def make_plots(
 ):
     """Build the sensitivity/specificity plot, ROC plot, and class boxplot.
 
-    ``show`` is a list naming which figures to display interactively (any of
+    'show' is a list naming which figures to display interactively (any of
     'threshold', 'roc', 'boxplot'); an empty list shows nothing. Saving to a
     file is independent of ``show`` and controlled by plot/roc_plot/boxplot.
     """
@@ -976,7 +950,7 @@ def make_plots(
     fig1, ax1 = plt.subplots(figsize=(8, 5))
     color1, color2 = "#1f77b4", "#d62728"
     ax1.plot(thresholds, sens * 100, color=color1, lw=2)
-    ax1.set_xlabel("Threshold (%s)" % raster)
+    ax1.set_xlabel(f"Threshold ({raster})")
     ax1.set_ylabel("% correctly predicted 1 (sensitivity)", color=color1)
     ax1.tick_params(axis="y", labelcolor=color1)
     ax1.set_ylim(0, 100)
@@ -1002,7 +976,7 @@ def make_plots(
 
     # ROC / AUC.
     fig2, axr = plt.subplots(figsize=(6, 6))
-    auc_label = "ROC (AUC = n/a)" if (auc != auc) else ("ROC (AUC = %.3f)" % auc)
+    auc_label = "ROC (AUC = n/a)" if (auc != auc) else f"ROC (AUC = {auc:.3f})"
     axr.plot(fpr, tpr, color="#2ca02c", lw=2, label=auc_label)
     axr.plot([0, 1], [0, 1], ls="--", color="gray", lw=1, label="random")
     axr.set_xlabel("False positive rate (1 - specificity)")
@@ -1036,19 +1010,19 @@ def make_plots(
             handletextpad=0.6,
         )
     axb.set_xlabel("Observed class")
-    axb.set_ylabel("Raster value (%s)" % raster)
+    axb.set_ylabel(f"Raster value ({raster})")
     axb.yaxis.grid(True)
     fig3.tight_layout()
 
     if plot:
         fig1.savefig(plot, dpi=150)
-        gs.message(_("Sensitivity/specificity plot written to <%s>") % plot)
+        gs.message(_("Sensitivity/specificity plot written to <{}>").format(plot))
     if roc_plot:
         fig2.savefig(roc_plot, dpi=150)
-        gs.message(_("ROC plot written to <%s>") % roc_plot)
+        gs.message(_("ROC plot written to <{}>").format(roc_plot))
     if boxplot:
         fig3.savefig(boxplot, dpi=150)
-        gs.message(_("Boxplot written to <%s>") % boxplot)
+        gs.message(_("Boxplot written to <{}>").format(boxplot))
 
     # Interactive display is opt-in via plots=. Show only the requested figures
     # and close the rest so no unwanted windows appear.
@@ -1105,8 +1079,9 @@ def run_plots(
             plt.close(_probe)
         except Exception as exc:  # noqa: BLE001
             gs.warning(
-                _("Backend '%s' failed to initialise (%s); falling back to Agg")
-                % (matplotlib.get_backend(), exc)
+                _("Backend '{}' failed to initialise ({}); falling back to Agg").format(
+                    matplotlib.get_backend(), exc
+                )
             )
             matplotlib.use("Agg", force=True)
 
@@ -1145,11 +1120,20 @@ def main():
     roc_plot = options["roc_plot"]
     boxplot = options["boxplot"]
     backend_opt = options.get("backend", "default")
-    tie_tolerance = float(options["tie_tolerance"])
+    # numpy.isclose does not validate rtol/atol: a negative value silently
+    # behaves as exact equality, inf merges every candidate into one run, and
+    # nan warns then degrades to exact equality. Reject all three up front.
+    try:
+        tie_tolerance = float(options["tie_tolerance"])
+    except ValueError:
+        gs.fatal(_("Option tie_tolerance must be a number"))
+    if not math.isfinite(tie_tolerance):
+        gs.fatal(_("Option tie_tolerance must be finite"))
+    if tie_tolerance < 0:
+        gs.fatal(_("Option tie_tolerance must not be negative"))
     reverse = flags["r"]
     # Which plots to display interactively (empty => show nothing).
     plots_sel = [p.strip() for p in options["plots"].split(",") if p.strip()]
-    # GRASS returns multi-valued options as a comma-separated string.
     criteria_sel = [c.strip() for c in options["criterion"].split(",") if c.strip()]
     # 'all' expands to every reported criterion. Aliases are not in the option
     # list, so no further de-duplication is needed here.
@@ -1158,9 +1142,9 @@ def main():
 
     # Validate inputs.
     if not gs.find_file(raster, element="cell")["fullname"]:
-        gs.fatal(_("Raster map <%s> not found") % raster)
+        gs.fatal(_("Raster map <{}> not found").format(raster))
     if not gs.find_file(points, element="vector")["fullname"]:
-        gs.fatal(_("Vector map <%s> not found") % points)
+        gs.fatal(_("Vector map <{}> not found").format(points))
 
     tools = Tools()
 
@@ -1175,7 +1159,9 @@ def main():
     n_neg = int((obs_arr == 0).sum())
     if n_pos == 0 or n_neg == 0:
         gs.fatal(
-            _("Column <%s> must contain both the positive and negative class") % column
+            _("Column <{}> must contain both the positive and negative class").format(
+                column
+            )
         )
 
     # Threshold grid for the sensitivity/specificity plot only. Its resolution
@@ -1186,7 +1172,7 @@ def main():
     else:
         info = gs.raster_info(raster)
         if info.get("min") is None or info.get("max") is None:
-            gs.fatal(_("Raster <%s> has no finite values") % raster)
+            gs.fatal(_("Raster <{}> has no finite values").format(raster))
         gmin, gmax = float(info["min"]), float(info["max"])
     if gmin == gmax:
         gs.fatal(_("Plot value range collapses to a single value (min == max)"))
@@ -1226,10 +1212,11 @@ def main():
         "auc": None if (auc != auc) else float(auc),
     }
 
-    auc_txt = "n/a" if (auc != auc) else ("%.3f" % auc)
+    auc_txt = "n/a" if (auc != auc) else f"{auc:.3f}"
     gs.message(
-        _("Reference points: %d (class 1: %d, class 0: %d)  |  AUC: %s")
-        % (n, n_pos, n_neg, auc_txt)
+        _("Reference points: {} (class 1: {}, class 0: {})  |  AUC: {}").format(
+            n, n_pos, n_neg, auc_txt
+        )
     )
 
     write_table(rows, summary, fmt, output)
@@ -1239,8 +1226,9 @@ def main():
         chosen = rows_by_criterion.get(apply_criterion)
         if chosen is None:
             gs.warning(
-                _("Criterion '%s' not available; <%s> not created")
-                % (apply_criterion, classified_output)
+                _("Criterion '{}' not available; <{}> not created").format(
+                    apply_criterion, classified_output
+                )
             )
         else:
             classify_raster(
@@ -1252,7 +1240,7 @@ def main():
     for crit in criteria_sel:
         row = rows_by_criterion.get(crit)
         if row is None:
-            gs.warning(_("Unknown criterion '%s' - skipping") % crit)
+            gs.warning(_("Unknown criterion '{}' - skipping").format(crit))
             continue
         refs.append((crit, row["threshold"]))
     if not refs:
@@ -1269,8 +1257,9 @@ def main():
             )
         if plots_sel:
             gs.warning(
-                _("backend=no_plot was set; plots=%s ignored (nothing is displayed).")
-                % ",".join(plots_sel)
+                _(
+                    "backend=no_plot was set; plots={} ignored (nothing is displayed)."
+                ).format(",".join(plots_sel))
             )
     else:
         run_plots(

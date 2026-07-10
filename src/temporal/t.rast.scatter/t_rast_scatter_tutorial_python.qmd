@@ -1,0 +1,758 @@
+# Tutorial: MODIS LST vs NDVI with `t.rast.scatter` (Python / Jupyter)
+
+This tutorial downloads MODIS LST and NDVI data and uses them to create an LST-versus-NDVI scatterplot. The study area is the Bardia region of western Nepal, covering part of the Terai lowlands and Himalayan foothills. The workflow uses the **`grass.tools` Python API** together with the **`grass.jupyter`** package for inline map display in a notebook.
+
+The region of interest, covering Bardia and its surroundings in western Nepal, is defined below. To use a different study area, edit the `north`, `south`, `west`, and `east` coordinate values below.
+
+
+```{python}
+#| code-fold: true
+#| code-summary: "Show code"
+
+import folium
+
+# Region bounds
+
+# n, s, w, e = 29.457155, 27.173913, 79.930136, 82.871685
+n, s, w, e = 52.1885179883333, 52.1038934705556, 4.73115363583333, 4.87937471166667
+
+# Center the map on the bounding box
+m = folium.Map(
+    location=[(n + s) / 2, (w + e) / 2],
+    zoom_start=8,
+    tiles=None,
+)
+
+# Base layer 1: OpenStreetMap
+folium.TileLayer("OpenStreetMap", name="OpenStreetMap", attr="© OpenStreetMap").add_to(m)
+
+# Base layer 2: Esri World Imagery (satellite)
+folium.TileLayer(
+    tiles="https://server.arcgisonline.com/ArcGIS/rest/services/"
+          "World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    attr="Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics, "
+         "and the GIS User Community",
+    name="Esri World Imagery)",
+).add_to(m)
+
+# folium uses [lat, lon]: [[south, west], [north, east]]
+rect_bounds = [[s, w], [n, e]]
+folium.Rectangle(
+    bounds=rect_bounds,
+    color="#d62728",
+    weight=2,
+    fill=True,
+    fill_opacity=0.08,
+    popup=f"Bardia region of interest\nn={n} s={s}\nw={w} e={e}",
+).add_to(m)
+
+# Fit the view to the rectangle
+m.fit_bounds(rect_bounds, padding=(20, 20))
+
+# Layer switcher to toggle between OSM and satellite
+folium.LayerControl(collapsed=False).add_to(m)
+
+m
+```
+
+## Setup
+
+###  Python libraries
+
+The first thing we need to do (for some environments) is to import GRASS Python
+packages. In order to do so, we need to add GRASS Python package to path. For a
+more detailed explanation of the following steps, see
+[this tutorial](https://grass-tutorials.osgeo.org/content/tutorials/get_started/fast_track_grass_and_python.html).
+
+```{python}
+import os
+import sys
+import subprocess
+from pathlib import Path
+```
+
+Now, make the GRASS Python packages importable (can be skipped in some setups)
+
+```{python}
+sys.path.append(
+    subprocess.check_output(["grass", "--config", "python_path"], text=True).strip()
+)
+```
+
+And import the required GRASS Python packages
+
+```{python}
+import grass.script as gs
+import grass.jupyter as gj
+from grass.tools import Tools
+```
+
+### Initialize GRASS session
+
+Normally, I start GRASS GIS first and then open my IDE, Positron, from the GRASS command line. The advantage of this approach is that the session is already connected to an existing GRASS project and mapset.
+
+For a tutorial, however, you may not need or want to store the project permanently. In that case, it is convenient to work in a temporary project. That is the approach used here: we create a GRASS project in a temporary directory and use it to import and process the data.
+
+The `gs.create_project()` function makes this straightforward. It creates a new GRASS project and uses an EPSG code to define the coordinate reference system.
+
+
+```{python}
+import tempfile
+tempdir = tempfile.TemporaryDirectory()
+tempdir = "/home/paulo/Desktop/test/"
+```
+
+Create a project in the temporary directory
+
+```{python}
+gs.create_project(path=tempdir.name, name="MODIS", epsg="4326")
+```
+
+After we create a project, we can start a GRASS session there.
+
+```{python}
+session = gj.init(Path(tempdir.name, "MODIS"))
+
+# The Tools object runs every GRASS tool for us
+tools = Tools()
+```
+
+`gj.init()` starts the session and returns a session object; `Tools()` picks it
+up automatically. 
+
+## Addons and credentials
+
+If you have not done so already, install `t.rast.scatter`, which we use later.
+
+```{python}
+tools.g_extension(extension="t.rast.scatter")
+```
+
+I would have normally used the `i.modis.download` addon for the next step,
+downloading the MODIS data. However, the LP DAAC Data Pool that the `i.modis`
+addons relied on has been discontinued for MODIS. So, instead we use NASA's
+[AppEEARS](https://appeears.earthdatacloud.nasa.gov/) service to download the
+data for the study area.
+
+You need a free
+[NASA Earthdata Login](https://urs.earthdata.nasa.gov/users/new) and the
+`requests` library. We authenticate against the AppEEARS API with those
+credentials and receive a short-lived bearer token. When running the code, you
+will get prompted for your username and password, so make sure you have them at
+hand.
+
+```{python}
+import getpass
+import requests
+
+API = "https://appeears.earthdatacloud.nasa.gov/api/"
+
+_user = input("NASA Earthdata username: ")
+_pw = getpass.getpass("NASA Earthdata password: ")
+_login = requests.post(f"{API}login", auth=(_user, _pw))
+del _user, _pw
+_login.raise_for_status()
+TOKEN = _login.json()["token"]
+HEAD = {"Authorization": f"Bearer {TOKEN}"}
+print("Authenticated with AppEEARS.")
+```
+
+Note that you can also download the data manually, as described in [this tutorial](https://ecodiv.earth/post/modis-fire-products-in-grass-gis/).
+
+## Set the computational region
+
+You already defined the north, south, west and east coordinates of your region
+of interest above. We now use these to set the region. Use the `-p` flag to
+print and check the region settings.
+
+```{python}
+tools.g_region(n=n, s=s, w=w, e=e, res=0.0083333, flags="p")
+```
+
+`res=0.0083333` (~1 km) matches the native cell size of the 1 km MODIS products
+used here. Because `t.rast.scatter` samples at points rather than across the
+region grid, the resolution is not critical, but aligning the region with the
+data is good practice.
+
+## Download the data with AppEEARS
+
+We request two years (2018–2019) so there are two full annual cycles — enough to
+get the full seasonal loop. You can request more.
+
+We use two 1 km MODIS products that AppEEARS delivers as GeoTIFFs:
+
+- **MOD11A2.061** — 8-day daytime Land Surface Temperature (`LST_Day_1km`)
+- **MOD13A2.061** — 16-day NDVI (`_1_km_16_days_NDVI`)
+
+### Confirm the layer names
+
+We need the exact layer identifiers, which is the code below for. For each entry in `LAYER_SPECS`, the code below checks whether the `layer` name we expect actually exists for that `product`, and if not, falls back to the first layer whose name or description contains the `match` hint.
+
+```{python}
+# What we want from each product: an expected identifier plus a substring hint.
+LAYER_SPECS = [
+    {"product": "MOD11A2.061", "layer": "LST_Day_1km", "match": "LST_Day"},
+    {"product": "MOD13A2.061", "layer": "_1_km_16_days_NDVI", "match": "NDVI"},
+]
+
+def resolve_layers(specs):
+    resolved = []
+    for spec in specs:
+        prod = spec["product"]
+        layers = requests.get(f"{API}product/{prod}", headers=HEAD).json()
+        want = spec.get("layer")
+        if want in layers:
+            chosen = want
+        else:
+            hint = spec.get("match", "").lower()
+            chosen = next(
+                (ln for ln, meta in layers.items()
+                 if hint in ln.lower()
+                 or hint in str(meta.get("Description", "")).lower()),
+                None,
+            )
+            if chosen is None:
+                raise RuntimeError(
+                    f"No layer in {prod} matches '{want}'/'{spec.get('match')}'. "
+                    f"Available: {sorted(layers)}"
+                )
+            print(f"note: {prod} '{want}' not found; using '{chosen}'")
+        resolved.append({"product": prod, "layer": chosen})
+        print(f"resolved {prod} -> {chosen}")
+    return resolved
+
+layers = resolve_layers(LAYER_SPECS)
+```
+
+### Request the data
+
+An AppEEARS *area* request takes a GeoJSON polygon, which we create using the
+bounding box we defined earlier. It furthermore needs the date range (AppEEARS
+expects the format `MM-DD-YYYY`), and the layer list. We ask for GeoTIFF output
+in geographic projection (EPSG:4326) to match our GRASS project.
+
+```{python}
+geojson = {
+    "type": "FeatureCollection",
+    "features": [{
+        "type": "Feature",
+        "properties": {},
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [[[w, s], [e, s], [e, n], [w, n], [w, s]]],
+        },
+    }],
+}
+
+task = {
+    "task_type": "area",
+    "task_name": "bardia_lst_ndvi",
+    "params": {
+        "dates": [{"startDate": "01-01-2018", "endDate": "12-31-2019"}],
+        "layers": layers,
+        "geo": geojson,
+        "output": {
+            "format": {"type": "geotiff"},
+            "projection": "geographic",
+        },
+    },
+}
+
+resp = requests.post(f"{API}task", json=task, headers=HEAD)
+resp.raise_for_status()
+task_id = resp.json()["task_id"]
+print(f"Submitted task: {task_id}")
+```
+
+This prints the task order, which will be processed on the AppEEARS servers. Processing can take some time. One option is to wait and check again later, but the more convenient approach is to automatically check the request status repeatedly until it changes to `done`. You may also receive an email with a link where you can monitor the request (I am not sure this is on by default, but I did receive an email with link).
+
+```{python}
+import time
+
+while True:
+    status = requests.get(f"{API}status/{task_id}", headers=HEAD).json()
+    state = status.get("status", "unknown")
+    print(f"status: {state}")
+    if state == "done":
+        break
+    if state in ("error", "expired", "deleted"):
+        raise RuntimeError(f"AppEEARS task ended with status: {state}")
+    time.sleep(60)
+```
+
+### Download the GeoTIFFs
+
+The completed task exposes a *bundle* of files. We download the GeoTIFFs (and
+skip the README, granule list, JSON, and quality CSVs).
+
+```{python}
+modis_dir = Path.home() / "modisdata" / "appeears_bardia"
+modis_dir.mkdir(parents=True, exist_ok=True)
+
+bundle = requests.get(f"{API}bundle/{task_id}", headers=HEAD).json()
+downloaded = []
+for f in bundle["files"]:
+    if f["file_type"] != "tif":
+        continue
+    fname = Path(f["file_name"]).name
+    dest = modis_dir / fname
+    with requests.get(
+        f"{API}bundle/{task_id}/{f['file_id']}", headers=HEAD, stream=True
+    ) as dl:
+        dl.raise_for_status()
+        with open(dest, "wb") as fh:
+            for chunk in dl.iter_content(chunk_size=1 << 20):
+                fh.write(chunk)
+    downloaded.append(dest)
+print(f"{len(downloaded)} GeoTIFFs in {modis_dir}")
+```
+
+## Import and register the data
+
+AppEEARS names area GeoTIFFs with a `doyYYYYDDD` date token, e.g.
+`MOD11A2.061_LST_Day_1km_doy2018001_aid0001.tif`. We parse that token for the
+date, import each file with `r.import`, and register the maps into two strds.
+
+```{python}
+from datetime import datetime, timedelta
+import tempfile
+import re
+from datetime import datetime, timedelta
+
+def doy_to_iso(stem):
+    """Extract 'doyYYYYDDD…' from a filename stem and return 'YYYY-MM-DD'."""
+    m = re.search(r"doy(\d{4})(\d{3})", stem)
+    if not m:
+        return None
+    year, doy = int(m.group(1)), int(m.group(2))
+    return (datetime(year, 1, 1) + timedelta(days=doy - 1)).strftime("%Y-%m-%d")
+
+lst_maps, ndvi_maps = [], []
+for f in downloaded:
+    stem = Path(f).stem
+    iso = doy_to_iso(stem)
+    if iso is None:
+        continue
+    if "LST_Day" in stem:
+        name = f"lst_{iso.replace('-', '')}"
+        tools.r_import(input=str(f), output=name)
+        lst_maps.append((name, iso))
+    elif "NDVI" in stem:
+        name = f"ndvi_{iso.replace('-', '')}"
+        tools.r_import(input=str(f), output=name)
+        ndvi_maps.append((name, iso))
+
+def register_strds(name, maps, title):
+    tools.t_create(
+        type="strds", temporaltype="absolute", output=name,
+        title=title, description=title, semantictype="mean",
+    )
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as tf:
+        for mapname, iso in sorted(maps, key=lambda x: x[1]):
+            tf.write(f"{mapname}|{iso}\n")
+        reg = tf.name
+    tools.t_register(input=name, file=reg)
+    os.unlink(reg)
+
+register_strds("lst_8day", lst_maps,
+               "MODIS LST Day 8-day (MOD11A2) - Bardia 2018-2019")
+register_strds("ndvi_16day", ndvi_maps,
+               "MODIS NDVI 16-day (MOD13A2) - Bardia 2018-2019")
+```
+
+### Rescale to physical units
+
+The raw GeoTIFF values are stored as scaled integers. We convert LST to degrees
+Celsius (`K * 0.02 - 273.15`) and NDVI to its physical −1..1 range (`* 0.0001`),
+and apply sensible colour tables.
+
+```{python}
+tools.t_rast_mapcalc(
+    input="lst_8day", output="lst_8day_c", basename="lst_c",
+    expression="lst_8day * 0.02 - 273.15", nprocs=8
+)
+tools.t_rast_colors(input="lst_8day_c", color="celsius")
+
+tools.t_rast_mapcalc(
+    input="ndvi_16day", output="ndvi_16day_s", basename="ndvi_s",
+    expression="ndvi_16day * 0.0001", nprocs=8
+)
+tools.t_rast_colors(input="ndvi_16day_s", color="ndvi")
+```
+
+## Display a map inline with `grass.jupyter`
+
+Before the scatterplot, render one of the maps inline using `grass.jupyter` to
+confirm the data look right.
+
+```{python}
+# Pick one NDVI map to display (substitute an actual map name from your import)
+ndvi_first = tools.t_rast_list(
+    input="ndvi_16day_s", columns="name", flags="u"
+).text.splitlines()[0]
+
+m = gj.Map()
+m.d_rast(map=ndvi_first)
+m.d_legend(raster=ndvi_first, bgcolor="white")
+m.show()
+```
+
+## Create sample points
+
+`t.rast.scatter` samples both datasets at a fixed set of points and at every
+timestep, so each plotted observation is a matched (LST, NDVI) pair at one
+location and time.
+
+```{python}
+# Use one imported LST map as the sampling frame.
+lst_first = tools.t_rast_list(
+    input="lst_8day_c", columns="name", flags="u"
+).text.splitlines()[0]
+
+tools.r_random(
+    seed=1,
+    input=lst_first,
+    npoints=60,
+    vector="bardia_pts",
+)
+```
+
+Whether sixty points is enough to represent the conditions across the region is
+something you have to decide (you could use the `r.meb` or `r.mess` addon to
+check). For now, the goal is to capture the main variation while keeping
+individual months distinguishable by colour.
+
+## Plot LST vs NDVI
+
+Because LST is 8-day and NDVI is 16-day, the datasets do not share timestamps
+one-to-one. `t.rast.scatter` pairs them for us. With `method=nearest` each map is
+paired with the closest-in-time map of the other dataset within a tolerance,
+which keeps every observation as its own dated point and preserves the finest
+temporal detail. (The alternative, shown later, bins both datasets to a common
+frequency first.)
+
+Throughout, flags are concatenated into one string: `flags="ol"` is `-o -l` (OLS
+line plus LOWESS smoother). The rendering flags `-c`, `-y`, and `-D` below are
+**mutually exclusive** — each is a different way of showing the same paired
+cloud, so you pick one at a time.
+
+### Colour by absolute time (`-c`)
+
+`-c` colours each point by its absolute timestep. This turns the otherwise
+ambiguous cloud into a dated trajectory.
+
+```{python}
+tools.t_rast_scatter(
+    xstrds="ndvi_16day_s",
+    ystrds="lst_8day_c",
+    points="bardia_pts",
+    method="nearest", tolerance="16 days",
+    x_label="NDVI",
+    y_label="LST Day (C)",
+    title="Bardia: LST vs NDVI 2018-2019 (absolute time)",
+    flags="col",   # -c absolute-time colour, -o OLS, -l LOWESS
+    nprocs=8,
+)
+```
+
+A drawback for a *seasonal* relationship: the colourbar runs linearly from 2018
+to 2019, so the same season in different years gets a different colour (October
+2018 is not the same colour as October 2019). A recurring annual loop therefore
+shows up as two offset clouds rather than one overlapping ring. The next option
+fixes that.
+
+### Colour by season (`-y`, cyclic)
+
+`-y` colours each point by its position **within the year** (day-of-year) on a
+cyclic colormap, so the same season in different years shares a colour and a
+recurring seasonal loop becomes visible as a closed ring. The colourbar is
+labelled by month, and its two ends meet (December wraps to January).
+
+```{python}
+tools.t_rast_scatter(
+    xstrds="ndvi_16day_s",
+    ystrds="lst_8day_c",
+    points="bardia_pts",
+    method="nearest", tolerance="16 days",
+    x_label="NDVI",
+    y_label="LST Day (C)",
+    title="Bardia: LST vs NDVI 2018-2019 (cyclic season)",
+    flags="yol",   # -y cyclic-season colour, -o OLS, -l LOWESS
+    nprocs=8,
+)
+```
+
+Reading the cyclic plot, the cloud sweeps through the year as a coherent
+progression: the cool, low-NDVI winter corner (pale tones), a pre-monsoon limb
+that climbs to the highest LST at still-modest NDVI (the surface heats before
+vegetation greens), and a monsoon/post-monsoon limb at high NDVI with *lower*
+LST (evapotranspiration cools the greened surface). For a given NDVI the
+pre-monsoon limb sits hotter than the post-monsoon limb — a seasonal hysteresis
+the absolute-time colouring cannot show.
+
+### Density (`-D`)
+
+When there are many points, overplotting hides where the cloud is densest. `-D`
+bins the points into a grid and colours each cell by the count of points in it.
+Set the grid resolution with `bins` (`nx,ny`) and the colormap with
+`density_colormap`. A density plot aggregates points of different times into one
+cell, so it cannot also carry a per-point time colour — hence `-D` is exclusive
+with `-c` and `-y`.
+
+```{python}
+tools.t_rast_scatter(
+    xstrds="ndvi_16day_s",
+    ystrds="lst_8day_c",
+    points="bardia_pts",
+    method="nearest", tolerance="16 days",
+    x_label="NDVI",
+    y_label="LST Day (C)",
+    title="Bardia: LST vs NDVI 2018-2019 (density)",
+    flags="Dol",   # -D density, -o OLS, -l LOWESS
+    bins="30,30",
+    density_colormap="viridis",
+    nprocs=8,
+)
+```
+
+### Aggregate to a common frequency
+
+Instead of nearest-in-time pairing, you can summarise both datasets to a common
+frequency and pair the per-period values. This is cleaner-looking; the trade-off
+is that aggregation smooths the loop's limbs slightly. `frequency` takes a pandas
+offset alias (`MS` = month-start).
+
+```{python}
+tools.t_rast_scatter(
+    xstrds="ndvi_16day_s",
+    ystrds="lst_8day_c",
+    points="bardia_pts",
+    method="mean", frequency="MS",
+    x_label="NDVI (monthly mean)",
+    y_label="LST Day (C, monthly mean)",
+    title="Bardia: LST vs NDVI 2018-2019 (monthly aggregate)",
+    flags="yol",
+    nprocs=8,
+)
+```
+
+## Add a driver: SMAP soil moisture for the lag examples
+
+The LST–NDVI relationship above is a *relationship*, not a one-way cause: LST
+influences vegetation and vegetation (via evapotranspiration) influences LST. For
+the **lag** examples we want an unambiguous driver — something that clearly
+*precedes* and drives the vegetation response. Rainfall is the textbook choice,
+but it is not in AppEEARS. Soil moisture is arguably a better driver still: it is
+the variable roots actually respond to (rain matters only once it wets the soil),
+and AppEEARS serves it through the same workflow.
+
+We use **SMAP enhanced L3 soil moisture** (`SPL3SMP_E.006`, daily, 9 km, global).
+Its daily cadence matters: a lag-accumulation window then has many maps to reduce
+over. This section is additive — it reuses the `TOKEN`/`HEAD`/`API`, the region,
+the GRASS session, and `resolve_layers`, and creates only a new `sm_daily` strds;
+it does not re-download the MODIS data.
+
+```{python}
+# Resolve the soil-moisture layer. SPL3SMP_E layers all share the prefix
+# 'Soil_Moisture_Retrieval_Data_AM_...', so we name the exact layer we want and
+# use a tight match hint so the fallback cannot grab 'albedo' or another band.
+SM_SPEC = [
+    {
+        "product": "SPL3SMP_E.006",
+        "layer": "Soil_Moisture_Retrieval_Data_AM_soil_moisture",
+        "match": "AM_soil_moisture",
+    },
+]
+sm_layers = resolve_layers(SM_SPEC)
+```
+
+```{python}
+sm_task = {
+    "task_type": "area",
+    "task_name": "bardia_soil_moisture",
+    "params": {
+        "dates": [{"startDate": "01-01-2018", "endDate": "12-31-2019"}],
+        "layers": sm_layers,
+        "geo": geojson,
+        "output": {"format": {"type": "geotiff"}, "projection": "geographic"},
+    },
+}
+resp = requests.post(f"{API}task", json=sm_task, headers=HEAD)
+resp.raise_for_status()
+sm_task_id = resp.json()["task_id"]
+print(f"Submitted SMAP task: {sm_task_id}")
+```
+
+A two-year daily request is much larger than the MODIS ones (~730 maps), so the
+task and the download take longer. Poll until done.
+
+```{python}
+while True:
+    status = requests.get(f"{API}status/{sm_task_id}", headers=HEAD).json()
+    state = status.get("status", "unknown")
+    print(f"status: {state}")
+    if state == "done":
+        break
+    if state in ("error", "expired", "deleted"):
+        raise RuntimeError(f"AppEEARS task ended with status: {state}")
+    time.sleep(60)
+```
+
+```{python}
+sm_dir = Path.home() / "modisdata" / "appeears_bardia_sm"
+sm_dir.mkdir(parents=True, exist_ok=True)
+
+bundle = requests.get(f"{API}bundle/{sm_task_id}", headers=HEAD).json()
+sm_files = []
+for f in bundle["files"]:
+    if f["file_type"] != "tif":
+        continue
+    fname = Path(f["file_name"]).name
+    dest = sm_dir / fname
+    with requests.get(
+        f"{API}bundle/{sm_task_id}/{f['file_id']}", headers=HEAD, stream=True
+    ) as dl:
+        dl.raise_for_status()
+        with open(dest, "wb") as fh:
+            for chunk in dl.iter_content(chunk_size=1 << 20):
+                fh.write(chunk)
+    sm_files.append(dest)
+print(f"{len(sm_files)} SMAP GeoTIFFs in {sm_dir}")
+```
+
+Import and register as a daily strds. SMAP enhanced soil moisture is already in
+volumetric units (m³/m³), so no rescaling is needed. SMAP flags low-quality
+retrievals over dense vegetation and open water, so some cells may be null — that
+is expected at this 9 km resolution.
+
+```{python}
+sm_maps = []
+for f in sm_files:
+    stem = Path(f).stem
+    iso = doy_to_iso(stem)
+    if iso is None:
+        continue
+    name = f"sm_{iso.replace('-', '')}"
+    tools.r_import(input=str(f), output=name)
+    sm_maps.append((name, iso))
+
+register_strds("sm_daily", sm_maps,
+               "SMAP enhanced soil moisture (m3/m3) - Bardia 2018-2019")
+tools.t_rast_colors(input="sm_daily", color="blues")
+```
+
+## Lag: how vegetation responds to antecedent soil moisture
+
+Vegetation does not respond to soil moisture on the same day; it integrates
+moisture over preceding weeks. `t.rast.scatter` can shift the **x (driver)**
+dataset in time before pairing, so we put soil moisture on x and NDVI on y. Note
+this is a different x/y assignment than the LST–NDVI plots above: here x is the
+driver we lag, y is the response.
+
+There are two lag modes.
+
+### Instantaneous shift (`lag`)
+
+`lag` pairs the response at time *t* with the driver at *t − lag* (a single
+shifted map). A positive lag means the driver precedes the response. Here we test
+NDVI against soil moisture one month earlier.
+
+```{python}
+tools.t_rast_scatter(
+    xstrds="sm_daily",          # driver on x
+    ystrds="ndvi_16day_s",      # response on y
+    points="bardia_pts",
+    method="nearest", tolerance="8 days",
+    lag="1 months",
+    x_label="Soil moisture (m3/m3), 1 month earlier",
+    y_label="NDVI",
+    title="Bardia: NDVI vs antecedent soil moisture (1-month lag)",
+    flags="yol",
+    nprocs=8,
+)
+```
+
+### Accumulation window (`lag_window` + `lag_stat`)
+
+A single shifted instant is a crude proxy for "antecedent moisture." The
+accumulation mode is more physical: for each NDVI time *t* it reduces all driver
+maps in a preceding window. `lag_window` sets the window length, `lag_stat` the
+reduction (`mean` suits a state variable like soil moisture; `sum` suits a flux
+like rainfall). The window ends at *t − lag*; with `lag` unset it ends at *t*.
+Accumulation mode requires the daily driver — which is why we used daily SMAP.
+
+```{python}
+tools.t_rast_scatter(
+    xstrds="sm_daily",
+    ystrds="ndvi_16day_s",
+    points="bardia_pts",
+    method="nearest", tolerance="8 days",
+    lag_window="60 days", lag_stat="mean",
+    x_label="Soil moisture (m3/m3), mean of preceding 60 days",
+    y_label="NDVI",
+    title="Bardia: NDVI vs 60-day antecedent soil moisture",
+    flags="yol",
+    nprocs=8,
+)
+```
+
+The optimal lag is not universal — it varies with vegetation type, season, and
+climate (see e.g. Ji & Peters 2005; Feng et al. 2023, doi:10.1186/s13717-023-00461-w).
+Re-running with a few different `lag` / `lag_window` values and watching which
+tightens the relationship is exactly the kind of exploration these options are
+for.
+
+## Reading the plots
+
+The LST–NDVI plots show a **loop**, not a line: for a given NDVI, LST differs
+between the pre-monsoon warming limb and the post-monsoon cooling limb
+(hysteresis). The monsoon months cluster at high NDVI; the dry season sits at low
+NDVI with a wide LST spread driven by the lowland–foothill elevation gradient.
+Both years overlap in roughly the same loop, confirming a recurring seasonal
+cycle — which the cyclic colouring (`-y`) makes far clearer than absolute time.
+
+The lag plots ask a different question: does NDVI track *earlier* soil moisture
+better than simultaneous values? Comparing the instantaneous-shift and
+accumulation-window versions, and varying the lag, shows how the strength of the
+relationship depends on the assumed response time.
+
+A caveat worth keeping in mind: over a region spanning lowland Terai to
+Himalayan foothills, a single relationship pooled across that gradient mixes
+different regimes. The plots are honest about the scatter this produces rather
+than hiding it.
+
+## Notes
+
+- **Calling convention.** Dots become underscores (`t.rast.scatter` →
+  `tools.t_rast_scatter`); options are kwargs; flags are a single string
+  (`flags="yol"`). A tool that writes to stdout returns a result object whose
+  `.text` (or `.keyval` / `.json` for structured output, where supported) holds
+  the output; tools without stdout return `None`.
+- **Rendering modes are mutually exclusive.** `-c` (absolute-time colour), `-y`
+  (cyclic-season colour), and `-D` (density) are three ways of showing the same
+  paired cloud; choose one. The regression overlays `-o` (OLS) and `-l` (LOWESS)
+  combine with any of them.
+- **Driver on x for lag.** `lag`, `lag_window`, and `lag_stat` shift the **x**
+  dataset, so put the driver on x and the response on y. Positive lag = driver
+  precedes response. Accumulation mode (`lag_window`) needs a temporally dense
+  driver and is supported with `method=nearest`.
+- **Rescaling matters.** Without the DN-to-physical conversions (Kelvin*0.02 for
+  LST, *0.0001 for NDVI) the axes are in digital numbers and the relationship is
+  harder to read. SMAP soil moisture needs no rescale (already m³/m³).
+- **QA masking.** For a publication figure, request the matching quality layer for
+  each product (AppEEARS exposes them, and the
+  [Quality API](https://appeears.earthdatacloud.nasa.gov/api/?language=Python#quality)
+  decodes the bit flags) and mask low-quality pixels before sampling. Omitted here
+  to keep the focus on `t.rast.scatter`.
+- **Layer names.** We resolve layer identifiers from the AppEEARS product service
+  at runtime rather than hard-coding them, because they differ between products and
+  versions. The `SPL3SMP_E` layers in particular share a long common prefix, so we
+  name the exact soil-moisture layer and use a tight `match` hint.
+- **Task timing.** AppEEARS tasks are processed server-side and can sit in
+  `queued`/`processing` for a while; the daily SMAP request (~730 maps) is
+  noticeably slower than the MODIS ones. To test the pipeline quickly, shorten the
+  date range first.
+- **`grass.tools` requires GRASS 8.5+.** On older versions, fall back to
+  `gs.run_command("t.rast.scatter", ...)`, which takes the same options as keyword
+  arguments and the same `flags` string.
+```

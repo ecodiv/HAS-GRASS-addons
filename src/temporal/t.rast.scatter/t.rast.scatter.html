@@ -1,0 +1,400 @@
+<h2>DESCRIPTION</h2>
+
+<em>t.rast.scatter</em> draws a <b>scatterplot</b> of the values of two space-time
+raster datasets (strds) against one another. Both datasets are sampled at the
+same set of points (supplied as a vector point map) at every shared timestep, so
+each plotted dot is a matched <i>(x, y)</i> pair: the value of the first dataset
+and the value of the second dataset at one location and one moment in time.
+Optionally, one or more regression curves are fitted to the cloud of points and
+drawn on top: an ordinary least-squares (OLS) line, a LOWESS smoother, and/or a
+Generalized Additive Model (GAM) curve.
+
+<p>
+The module is a standalone tool for exploratory analysis of the relationship
+between two co-located variables through time, for example a vegetation index
+against land surface temperature, or rainfall against soil moisture. Internally
+it uses <i><a href="t.rast.what.md">t.rast.what</a></i> to sample both datasets
+at the given points across all timesteps, pairs the two series in time, and then
+plots the result with <a href="https://matplotlib.org/">matplotlib</a>.
+
+<p>
+Unlike a time-series plot, which shows each variable along a time axis, a
+scatterplot shows the two variables against <i>each other</i>. This makes it
+suited to questions about co-variation: do high values of one go with high
+values of the other, is the relationship linear or curved, does it tighten or
+loosen, and do the points trace a loop over the seasons.
+
+<h3>Input and sampling</h3>
+
+The two datasets are given with <b>xstrds</b> (plotted on the x axis) and
+<b>ystrds</b> (plotted on the y axis). Both must use <b>absolute time</b> (see
+below).
+
+<p>
+The sample locations are supplied with <b>points</b>, a vector map of points.
+Both datasets are sampled at exactly these locations, and the same points are
+reused at every timestep, so the pairing of <i>(x, y)</i> values is always at an
+identical location. Only point features are used. The points are passed straight
+to <i><a href="t.rast.what.md">t.rast.what</a></i>, which samples at the
+<i>current computational region</i>'s resolution; set the region with <i><a
+href="g.region.md">g.region</a></i> before running if needed.
+
+<p>
+The points can be any vector map you like. To sample a region at random,
+create the points beforehand with <i><a href="v.random.md">v.random</a></i>
+(optionally restricted to a vector area, or to the non-null cells of a raster),
+and pass the result as <b>points</b>. Keeping point generation outside the
+module means you stay in full control of how and where the sampling happens.
+
+<h3>Absolute time only</h3>
+
+The tool supports <b>absolute-time</b> (calendar-dated) datasets only.
+Relative-time datasets are intentionally not supported: without a known time
+unit a tolerance such as <tt>1 day</tt> is meaningless, and there is no reliable
+way to tell whether two relative indices refer to genuinely comparable moments.
+Rather than risk silently pairing unrelated observations, the module stops with
+an error if either dataset uses relative time.
+
+<h3>Pairing the two datasets in time</h3>
+
+The two datasets rarely have identical timestamps, so the <b>method</b> option
+controls how their timesteps are matched into <i>(x, y)</i> pairs. There are two
+distinct strategies.
+
+<p>
+<b>method=nearest</b> (the default) matches each map of one dataset to the
+closest-in-time map of the other, within a maximum allowed time difference set
+by <b>tolerance</b>. This preserves the individual observations: every paired
+dot is a real sample from each dataset. The <b>tolerance</b> is a duration
+string such as <tt>1 day</tt>, <tt>6 hours</tt> or <tt>30 minutes</tt>; a map
+with no counterpart inside that window is dropped from the plot. Matching is
+nearest-neighbour and one-to-one, so an observation is never reused. Use this
+when each map is a discrete acquisition (for example a satellite overpass) and
+the timestamp differences are small jitter rather than a difference in sampling
+design.
+
+<p>
+The <b>aggregate methods</b> (<tt>mean</tt>, <tt>median</tt>, <tt>sum</tt>,
+<tt>min</tt>, <tt>max</tt>) take a different approach: both datasets are first
+binned to a common <b>frequency</b> and each bin is reduced to a single summary
+value, and then the per-period summaries are paired. Here a plotted dot is no
+longer a single matched observation but a pair of period summaries (for example
+the monthly mean of each dataset). The <b>frequency</b> is a <a
+href="https://pandas.pydata.org/docs/user_guide/timeseries.html#time-span-representation">pandas
+offset alias</a> such as <tt>D</tt> (daily), <tt>W</tt> (weekly), <tt>MS</tt>
+(month start) or <tt>YS</tt> (year start). Use this when the two datasets have
+different native cadences, or when you are interested in the relationship
+between typical per-period values rather than between individual acquisitions.
+
+<p>
+The two strategies are mutually exclusive in their settings: <b>tolerance</b>
+applies only to <tt>method=nearest</tt>, and <b>frequency</b> only to the
+aggregate methods. Supplying the wrong companion option, or omitting the
+required one, is reported as an error.
+
+<p>
+In both cases the pairing keeps only point/time combinations where <b>both</b>
+datasets have a non-null value. Maps or bins present in only one dataset
+contribute nothing to the scatter and are dropped.
+
+<h3>Regression curves</h3>
+
+Three optional fits can be drawn over the scatter cloud, each enabled by a flag.
+
+<p>
+<b>-o</b> adds an ordinary least-squares (OLS) regression line, reported with
+its <b>slope</b>, <b>intercept</b> and <b>R²</b> (SciPy's <a
+href="https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.linregress.html">linregress</a>).
+
+<p>
+<b>-l</b> adds a <b>LOWESS</b> (locally weighted scatterplot smoothing) curve, a
+flexible local regression that follows the data without assuming a global
+functional shape (statsmodels' <a
+href="https://www.statsmodels.org/stable/generated/statsmodels.nonparametric.smoothers_lowess.lowess.html">lowess</a>).
+Its smoothness is set with <b>lowess_frac</b>, the fraction of the data used to
+estimate each local value (between 0 and 1, default 0.3); larger values give a
+smoother curve.
+
+<p>
+<b>-g</b> adds a <b>Generalized Additive Model</b> (GAM) curve, a smooth spline
+fit (<a href="https://pygam.readthedocs.io/">pyGAM</a>). It captures curved
+relationships without prescribing their form.
+
+<p>
+The <b>-t</b> flag adds the fit statistics (such as the OLS slope and R²) to the
+plot legend. The statistics are always printed to the terminal regardless of
+this flag.
+
+<p>
+<b>A note on significance.</b> A scatterplot of two time series invites caution.
+Environmental series are almost always serially autocorrelated, which means
+successive points are not independent. The OLS slope and its R² therefore
+describe the visible association but should <b>not</b> be read as a formal
+hypothesis test: the effective sample size is smaller than the number of dots,
+and ordinary significance assessments will be over-optimistic. Treat the fits as
+descriptive summaries of co-variation, not as proof of a relationship.
+
+<h3>Colouring the points</h3>
+
+By default all points are drawn in a single colour, set with <b>color</b>. It
+accepts a standard GRASS colour name (such as <tt>blue</tt>), an <tt>R:G:B</tt>
+triplet with each component in 0-255 (such as <tt>51:125:255</tt>), a hex code
+(<tt>#1f77b4</tt>) or a <tt>tab:</tt> name.
+
+<p>
+The <b>-c</b> flag instead colours each point by its timestep, with a colorbar
+mapping colour to date. This reveals temporal structure that a single-colour
+scatter hides, for example a seasonal hysteresis loop where the relationship
+follows a different path on the way up than on the way down. When <b>-c</b> is
+set, the <b>color</b> option is ignored.
+
+<h3>Output</h3>
+
+By default the scatterplot is shown in an interactive window. If <b>output</b>
+is given, the plot is instead saved to that file and the image format is taken
+from the file extension (<tt>.png</tt>, <tt>.pdf</tt>, <tt>.svg</tt>, ...). Plot
+appearance is controlled by <b>dpi</b> (resolution, default 300) and
+<b>plot_dimensions</b> (width,height in inches).
+
+<p>
+The <b>backend</b> option selects the matplotlib rendering backend. You rarely
+need it: <tt>Agg</tt> is chosen automatically when writing to a file, and
+<tt>WXAgg</tt> (an interactive window) when no output file is given. Override it
+only if your system needs a different interactive backend (e.g. <tt>TkAgg</tt>,
+<tt>Qt5Agg</tt>).
+
+<p>
+The <b>csv</b> option additionally writes the paired <i>(x, y)</i> samples, one
+row per point and timestep with their coordinates and date, so they can be
+replotted or analysed in the software tool of your choice.
+
+<h3>Subsetting and performance</h3>
+
+The <b>where</b> option accepts a temporal WHERE clause (as used by other
+<tt>t.*</tt> modules) to restrict the analysis to a subset of timestamps, for
+example a particular range of years.
+
+<p>
+The <b>nprocs</b> option sets the number of parallel processes used during
+sampling by <i><a href="t.rast.what.md">t.rast.what</a></i>, potentially making
+the module substantially faster to run.
+
+<h2>NOTES</h2>
+
+This addon requires the Python packages <i>numpy</i>, <i>pandas</i>,
+<i>scipy</i> and <i>matplotlib</i>. They are all pip-installable, e.g.
+
+<div class="code">
+  <pre>
+pip install numpy pandas scipy matplotlib
+</pre>
+</div>
+
+<p>
+A recent <b>pandas</b> (version 2.0 or newer) is required. The optional
+regression curves bring two further, also optional, dependencies:
+<i>statsmodels</i> for the LOWESS smoother (<b>-l</b>) and <i>pygam</i> for the
+GAM curve (<b>-g</b>).
+
+<div class="code">
+  <pre>
+pip install statsmodels pygam
+</pre>
+</div>
+
+<p>
+All dependencies are checked up front, before any sampling is done, so a missing
+package fails immediately rather than after the (potentially slow) sampling
+step. The optional packages are only required when their flag is set: you can
+run the module without <i>statsmodels</i> or <i>pygam</i> as long as you do not
+request the corresponding curve.
+
+<p>
+Computation depends on the following libraries:
+
+<ul>
+  <li><b>pandas</b> builds the time-indexed series, performs the nearest-in-time
+  pairing (<tt>pandas.merge_asof</tt>) or the aggregation-then-pairing, and
+  assembles the paired table.</li>
+  <li><b>scipy</b> fits the OLS regression line (<a
+  href="https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.linregress.html">scipy.stats.linregress</a>).</li>
+  <li><b>statsmodels</b> fits the optional LOWESS smoother (<a
+  href="https://www.statsmodels.org/stable/generated/statsmodels.nonparametric.smoothers_lowess.lowess.html">lowess</a>).</li>
+  <li><b>pygam</b> fits the optional GAM curve (<a
+  href="https://pygam.readthedocs.io/en/latest/reference/_autosummary/pygam.pygam.LinearGAM.html">LinearGAM</a>).</li>
+  <li><b>numpy</b> provides the array operations underlying the above, and
+  <b>matplotlib</b> renders the scatterplot.</li>
+</ul>
+
+<h2>EXAMPLES</h2>
+
+The examples use the North Carolina mapset with climatic data time series
+(nc_climate_spm_2000_2012), which you can download from the <a
+href="https://grass.osgeo.org/download/data/">GRASS sample data</a> page.
+
+<h3>Data preparation</h3>
+
+The following is borrowed from the <a
+href="https://ncsu-geoforall-lab.github.io/grass-temporal-workshop/">NSCU-Geoforall</a>
+tutorial. We create temporal datasets which serve as containers for the time
+series. First step is to create empty datasets of type strds (space-time raster
+dataset). Note, that we use absolute time.
+
+<div class="code">
+  <pre>
+t.create output=tempmean type=strds temporaltype=absolute title="Average
+temperature" description="Monthly temperature average in NC [deg C]"
+
+t.create output=precip_sum type=strds temporaltype=absolute
+title="Precipitation" description="Monthly precipitation sum in NC [mm]"
+</pre>
+</div>
+
+<p>
+Now we register raster maps into the space-time raster datasets we just created.
+We use <tt>g.list</tt> to list separately temperature and precipitation maps.
+Note that <tt>g.list</tt> lists maps alphabetically which in this case orders
+the maps chronologically which is what we need. Using backticks to pass the maps
+directly to t.register
+
+<div class="code">
+  <pre>
+t.register -i input=tempmean type=raster start=2000-01-01 increment="1 months"
+maps=`g.list type=raster pattern="*tempmean" separator=comma --quiet`
+
+t.register -i input=precip_sum type=raster start=2000-01-01 increment="1 months"
+maps=`g.list type=raster pattern="*precip" separator=comma --quiet`
+</pre>
+</div>
+
+<h3>Create sample points</h3>
+
+The module samples both datasets at a set of points. Here we generate 100 random
+points across the current region with <i><a href="v.random.md">v.random</a></i>,
+to be reused at every timestep:
+
+<div class="code">
+  <pre>
+g.region raster=2000_01_tempmean -p
+
+v.random output=samples npoints=100 seed=1
+</pre>
+</div>
+
+<h3>Scatterplot of two datasets</h3>
+
+Plot the monthly temperature against the monthly precipitation at the sample
+points. Because the two datasets share the same monthly timestamps, a small
+tolerance is enough to pair them:
+
+<div class="code">
+  <pre>
+t.rast.scatter xstrds=tempmean ystrds=precip_sum points=samples \ tolerance="5
+days" output=t_rast_scatter_01.png
+</pre>
+</div>
+
+<p>
+Resulting image:
+
+<p>
+!<a href="t_rast_scatter_01.png">Scatterplot of monthly temperature against precipitation</a>
+
+<h3>Add regression curves</h3>
+
+To explore the form of the relationship, add an OLS line (<b>-o</b>) and a
+LOWESS smoother (<b>-l</b>), and show the fit statistics in the legend with
+<b>-t</b>:
+
+<div class="code">
+  <pre>
+t.rast.scatter -olt xstrds=tempmean ystrds=precip_sum points=samples \
+tolerance="5 days" output=t_rast_scatter_02.png
+</pre>
+</div>
+
+<p>
+Resulting image:
+
+<p>
+!<a href="t_rast_scatter_02.png">Scatterplot with OLS line and LOWESS smoother</a>
+
+<h3>Colour the points by time</h3>
+
+A single-colour scatter hides any seasonal structure. Add <b>-c</b> to colour
+each point by its date, which can reveal a seasonal loop in the relationship:
+
+<div class="code">
+  <pre>
+t.rast.scatter -c xstrds=tempmean ystrds=precip_sum points=samples \
+tolerance="5 days" output=t_rast_scatter_03.png
+</pre>
+</div>
+
+<p>
+Resulting image:
+
+<p>
+!<a href="t_rast_scatter_03.png">Scatterplot with points coloured by time</a>
+
+<h3>Aggregate before pairing</h3>
+
+When you are interested in the relationship between typical per-period values
+rather than between individual acquisitions, switch from nearest-in-time
+matching to aggregation. Here both datasets are binned to year start
+(<tt>YS</tt>) and reduced to their annual mean before pairing:
+
+<div class="code">
+  <pre>
+t.rast.scatter -ot xstrds=tempmean ystrds=precip_sum points=samples \
+  method=mean frequency=YS output=t_rast_scatter_04.png
+</pre>
+</div>
+
+<p>
+Each dot now represents one point in one year, with the x and y values being
+that year's mean temperature and mean precipitation at that location.
+
+<h3>Restrict to a subset of years</h3>
+
+The <b>where</b> option restricts the analysis to a subset of timestamps, for
+example the years 2005 to 2010:
+
+<div class="code">
+  <pre>
+t.rast.scatter -ol xstrds=tempmean ystrds=precip_sum points=samples \
+tolerance="5 days" where="start_time &gt;= '2005-01-01' and start_time &lt;
+'2011-01-01'" \ output=t_rast_scatter_05.png
+</pre>
+</div>
+
+<h2>SEE ALSO</h2>
+
+<i><a href="t.rast.stl.md">t.rast.stl</a>, <a href="t.rast.line.md">t.rast.line</a>, <a href="t.rast.what.md">t.rast.what</a>, <a href="v.random.md">v.random</a>, <a href="t.rast.univar.md">t.rast.univar</a></i>
+
+<h2>REFERENCES</h2>
+
+<ul>
+  <li>Cleveland, W. S. (1979). Robust Locally Weighted Regression and Smoothing
+  Scatterplots. <i>Journal of the American Statistical Association</i>, 74(368),
+  829–836.</li>
+  <li>Local regression. (2026). In <i>Wikipedia</i> <a
+  href="https://en.wikipedia.org/wiki/Local_regression">Wikipedia local
+  regression article</a>.</li>
+  <li>statsmodels. (2025). <i>Statsmodels</i> (Version 0.14.6) [Python] <a
+  href="https://github.com/statsmodels/statsmodels/">statsmodels
+  repository</a>.</li>
+  <li>Servén, D., &amp; Brummitt, C. (2018). pyGAM: Generalized Additive Models
+  in Python. <i>Zenodo</i>. <a href="https://pygam.readthedocs.io/">pyGAM
+  documentation</a>.</li>
+
+</ul>
+
+<h2>AUTHOR</h2>
+
+<a href="https://ecodiv.earth">Paulo van Breugel</a>, <a
+href="https://www.has.nl/en/research/professorships/innovative-bio-monitoring-professorship/">Innovative
+Biomonitoring</a> and <a
+href="https://www.has.nl/en/research/professorships/climate-robust-landscapes-professorship/">Climate-robust
+Landscapes</a> research groups at the <a href="https://has.nl">HAS green
+academy</a>
