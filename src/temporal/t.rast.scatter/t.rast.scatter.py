@@ -5,7 +5,10 @@
 # MODULE:       t.rast.scatter
 # AUTHOR:       Paulo van Breugel
 # PURPOSE:      Draws a scatterplot of the values of two space-time raster
-#               datasets (strds), sampled at a user-provided set of points.
+#               datasets (strds), sampled at a random set of points within a
+#               vector- or raster-defined region. The same sample points are
+#               reused at every (shared) timestep, so each plotted point is a
+#               matched (strds_x, strds_y) pair at one location and time.
 #               Optional OLS, LOWESS and monotone-GAM fits are overlaid.
 #
 # COPYRIGHT:    (c) 2026 Paulo van Breugel and the GRASS Development Team
@@ -16,7 +19,7 @@
 #############################################################################
 
 # %module
-# % description: Scatterplot of two space-time raster datasets sampled at user-defined points.
+# % description: Scatterplot of two space-time raster datasets sampled at random points within a region
 # % keyword: temporal
 # % keyword: raster
 # % keyword: time series
@@ -28,21 +31,21 @@
 
 # %option G_OPT_STRDS_INPUT
 # % key: xstrds
-# % label: STRDS for the x axis
+# % label: Space-time raster dataset for the x axis
 # % guisection: Input
 # %end
 
 # %option G_OPT_STRDS_INPUT
 # % key: ystrds
-# % label: STRDS for the y axis
+# % label: Space-time raster dataset for the y axis
 # % description: Second strds, plotted on the y axis against 'xstrds'. Both datasets must use absolute time. How their timesteps are paired is controlled by the 'method' option.
 # % guisection: Input
 # %end
 
 # %option G_OPT_V_INPUT
 # % key: points
-# % label: Point vector map with sample locations
-# % description: Vector map of points at which both datasets are sampled at every timestep.
+# % label: Point vector map with the sample locations
+# % description: Vector map of points at which both datasets are sampled. The same points are used at every timestep, so each plotted observation is a matched (x, y) pair at one location and time. Only point features are used.
 # % guisection: Input
 # %end
 
@@ -78,35 +81,6 @@
 # % description: Target frequency to bin both datasets to before pairing, as a pandas offset alias (e.g. 'D' daily, 'W' weekly, 'MS' month-start, 'YS' year-start). Used only with the aggregate methods (mean, median, sum, min, max).
 # % required: no
 # % guisection: Pairing
-# %end
-
-# %option
-# % key: lag
-# % type: string
-# % label: Lag of the x (driver) dataset
-# % description: Shift the x (driver) dataset in time before pairing, to test a delayed response (e.g. vegetation reacting to earlier rainfall). A duration like '1 months', '30 days' or '2 weeks'. A positive lag means the driver precedes the response: an x map at time t is paired with the y map at t + lag. Negative values are allowed. Combine with 'lag_window' for an accumulated/averaged driver instead of a single shifted value.
-# % required: no
-# % guisection: Lag
-# %end
-
-# %option
-# % key: lag_window
-# % type: string
-# % label: Accumulation window for the driver
-# % description: If set, the driver value paired with a response at time t is not a single shifted map but the reduction (see 'lag_stat') of all x maps falling in the preceding window [t - lag - lag_window, t - lag]. Use for variables the vegetation integrates over time, e.g. rainfall accumulated over the previous 60 days. A duration like '60 days' or '2 months'.
-# % required: no
-# % guisection: Lag
-# %end
-
-# %option
-# % key: lag_stat
-# % type: string
-# % label: Window reduction
-# % description: How to reduce the x maps inside 'lag_window' to a single driver value. 'sum' suits fluxes such as rainfall; 'mean' suits states such as temperature or soil moisture. Used only when 'lag_window' is set.
-# % options: sum,mean,median,min,max
-# % answer: sum
-# % required: no
-# % guisection: Lag
 # %end
 
 # %flag
@@ -149,42 +123,8 @@
 
 # %flag
 # % key: c
-# % label: Color points by time (absolute)
-# % description: Color the scatter points by their absolute timestep, with a colorbar, to reveal temporal structure. Note that the same season in different years gets a different color; for a seasonal loop use -y (cyclic) instead. Mutually exclusive with -y and -D.
-# % guisection: Optional
-# %end
-
-# %flag
-# % key: y
-# % label: Color points by season (cyclic)
-# % description: Color the scatter points by their position within the year (day-of-year) using a cyclic colormap, so the same season in different years shares a color and a recurring seasonal loop becomes visible. Mutually exclusive with -c and -D.
-# % guisection: Optional
-# %end
-
-# %flag
-# % key: D
-# % label: Density plot
-# % description: Render the points as a 2D density (hexagonal/grid binning colored by count) instead of individual dots, useful when overplotting hides structure. Mutually exclusive with -c and -y (a density bin aggregates points of different times, so per-point time coloring does not apply).
-# % guisection: Optional
-# %end
-
-# %option
-# % key: bins
-# % type: string
-# % label: Density bins (x,y)
-# % description: Number of bins along the x and y axes for the density plot (-D), as 'nx,ny'.
-# % answer: 30,30
-# % required: no
-# % guisection: Optional
-# %end
-
-# %option
-# % key: density_colormap
-# % type: string
-# % label: Density colormap
-# % description: Matplotlib colormap for the density plot (-D).
-# % answer: viridis
-# % required: no
+# % label: Color points by time
+# % description: Color the scatter points by their timestep, with a colorbar, to reveal temporal structure (e.g. seasonal loops).
 # % guisection: Optional
 # %end
 
@@ -351,9 +291,14 @@ MIN_PANDAS_VERSION = (2, 0)
 def check_dependencies(backend, need_lowess, need_gam):
     """Import and validate every third-party dependency, up front.
 
-    Optional dependencies are only required when the
-    corresponding flag is set: statsmodels for the LOWESS smoother
-    (-l) and pygam for the GAM curve (-g).
+    This runs before any GRASS calls or data processing so that a missing
+    package or unsupported version fails immediately, rather than after the
+    (potentially slow) sampling and pairing steps. Optional dependencies are
+    only required when the corresponding flag is set: statsmodels for the
+    LOWESS smoother (-l) and pygam for the GAM curve (-g).
+
+    All imported modules are bound to module-level globals so the rest of the
+    code can use them directly.
 
     :param str backend: matplotlib backend to activate before importing pyplot
     :param bool need_lowess: whether the LOWESS smoother was requested (-l)
@@ -381,7 +326,8 @@ def check_dependencies(backend, need_lowess, need_gam):
         )
 
     # Minimum pandas version. The timestamp parsing relies on the 'ISO8601'
-    # format token introduced in pandas 2.0.
+    # format token introduced in pandas 2.0; rather than carry a fragile
+    # fallback for older pandas, require a supported version explicitly.
     try:
         pandas_version = tuple(int(p) for p in pd.__version__.split(".")[:2])
     except (ValueError, AttributeError):
@@ -456,7 +402,8 @@ def grass_color_to_mpl(value):
     """Convert a GRASS color spec to a matplotlib-usable color.
 
     Accepts an ``R:G:B`` triplet (0-255 components) or anything matplotlib
-    already understands (name, hex, 'tab:' name).
+    already understands (name, hex, 'tab:' name). See t.rast.stl for the full
+    rationale; this is the same helper.
     """
     if not value:
         return None
@@ -579,7 +526,9 @@ def pair_aggregate(xdf, ydf, frequency, method):
     by = binned(ydf, "y")
 
     # Carry coordinates along (one per cat) for optional CSV / vector output.
-    coords = xdf[["cat", "east", "north"]].drop_duplicates("cat")
+    coords = (
+        xdf[["cat", "east", "north"]].drop_duplicates("cat")
+    )
 
     merged = bx.merge(by, on=["period", "cat"], how="inner")
     if merged.empty:
@@ -593,142 +542,6 @@ def pair_aggregate(xdf, ydf, frequency, method):
     return merged[["cat", "east", "north", "period", "x", "y"]]
 
 
-def parse_lag(value, allow_negative=True):
-    """Parse a lag duration string into a signed pandas Timedelta.
-
-    :param str value: the lag= option value (e.g. '1 months', '30 days')
-    :param bool allow_negative: whether a negative lag is permitted
-    :return pandas.Timedelta: the parsed offset
-    """
-    try:
-        td = pd.Timedelta(value)
-    except (ValueError, TypeError):
-        gs.fatal(
-            _(
-                "Could not parse lag '{}' as a duration. Use forms like "
-                "'1 months', '30 days', '2 weeks' or '6 hours'."
-            ).format(value)
-        )
-    if td < pd.Timedelta(0) and not allow_negative:
-        gs.fatal(_("Lag must be a non-negative duration."))
-    return td
-
-
-def apply_lag(xdf, lag, lag_window=None, lag_stat="sum"):
-    """Lag the x (driver) dataset in time before pairing.
-
-    Two modes:
-
-    * Instantaneous shift (lag_window is None): every x sample is relabelled
-      from its own time t to t + lag, so it subsequently pairs with the y
-      (response) sample at t + lag. A positive lag means the driver precedes
-      the response.
-
-    * Accumulation window (lag_window set): for each y (response) time the
-      driver value is the reduction (lag_stat) of all x samples whose ORIGINAL
-      time falls in the preceding window [t - lag - lag_window, t - lag]. This
-      is computed per point (cat) here as a relabelling: each x sample is
-      assigned to the response times whose window contains it. Because the
-      response grid is not known at this stage, the accumulation is instead
-      realised by shifting and then letting the downstream nearest/aggregate
-      pairing match; see note below.
-
-    For the accumulation mode we cannot know the response timestamps here
-    (pairing happens later), so this function only performs the instantaneous
-    shift. The accumulation mode is handled in apply_lag_accumulate(), which
-    needs both frames. apply_lag() therefore implements ONLY the shift; callers
-    select between the two.
-
-    :param pandas.DataFrame xdf: x-dataset samples [cat,east,north,date,value]
-    :param pandas.Timedelta lag: time offset to add to each x date
-    :return pandas.DataFrame: xdf with shifted 'date'
-    """
-    out = xdf.copy()
-    out["date"] = pd.to_datetime(out["date"]) + lag
-    return out
-
-
-def apply_lag_accumulate(xdf, ydf, lag, lag_window, lag_stat="sum"):
-    """Build a lagged, accumulated driver frame aligned to response times.
-
-    For every response (y) sample at time t and point cat, reduce all x samples
-    of the same point whose original time falls in the window
-    [t - lag - lag_window, t - lag] using 'lag_stat'. The result is a driver
-    frame with one row per response time/point, carrying the accumulated value
-    under 'value' and the response time under 'date', so it can be paired with
-    the response one-to-one downstream (method=nearest, tolerance=0-ish) or
-    merged directly.
-
-    :param pandas.DataFrame xdf: driver samples [cat,east,north,date,value]
-    :param pandas.DataFrame ydf: response samples [cat,east,north,date,value]
-    :param pandas.Timedelta lag: leading-edge offset of the window
-    :param pandas.Timedelta lag_window: window length
-    :param str lag_stat: 'sum','mean','median','min','max'
-    :return pandas.DataFrame: accumulated driver [cat,east,north,date,value]
-    """
-    xx = xdf.copy()
-    xx["date"] = pd.to_datetime(xx["date"])
-    yy = ydf.copy()
-    yy["date"] = pd.to_datetime(yy["date"])
-
-    reducer = {
-        "sum": np.sum,
-        "mean": np.mean,
-        "median": np.median,
-        "min": np.min,
-        "max": np.max,
-    }.get(lag_stat)
-    if reducer is None:
-        gs.fatal(_("Unknown lag_stat '{}'.").format(lag_stat))
-
-    pieces = []
-    empty_windows = 0
-    total_windows = 0
-    for cat, yg in yy.groupby("cat", sort=False):
-        xg = xx[xx["cat"] == cat]
-        if xg.empty:
-            continue
-        xt = xg["date"].to_numpy()
-        xv = xg["value"].to_numpy(dtype="float64")
-        for _, yrow in yg.iterrows():
-            t = yrow["date"]
-            hi = t - lag
-            lo = hi - lag_window
-            mask = (xt > np.datetime64(lo)) & (xt <= np.datetime64(hi))
-            total_windows += 1
-            if not mask.any():
-                empty_windows += 1
-                continue
-            val = float(reducer(xv[mask]))
-            pieces.append(
-                {
-                    "cat": cat,
-                    "east": yrow["east"],
-                    "north": yrow["north"],
-                    "date": t,
-                    "value": val,
-                }
-            )
-
-    if empty_windows and total_windows:
-        gs.warning(
-            _(
-                "{e} of {n} accumulation windows contained no driver maps; "
-                "those response times were dropped. Consider a longer "
-                "'lag_window' or a denser driver dataset."
-            ).format(e=empty_windows, n=total_windows)
-        )
-    if not pieces:
-        gs.fatal(
-            _(
-                "The accumulation window captured no driver maps for any "
-                "response time. Check 'lag', 'lag_window', and that the two "
-                "datasets overlap in time."
-            )
-        )
-    return pd.DataFrame(pieces)
-
-
 def sample_long(strds, points_map, where=None, nprocs=1):
     """Sample one strds at the points of a vector map across all timesteps.
 
@@ -736,6 +549,16 @@ def sample_long(strds, points_map, where=None, nprocs=1):
     value is non-null. Pairing of the two datasets happens afterwards in
     pair_nearest() / pair_aggregate(), so this function does NOT filter by the
     other dataset.
+
+    The vector map is passed straight to t.rast.what (points=), so there is no
+    need to read coordinates into Python first; with the -v flag t.rast.what
+    returns the vector point category (a stable per-point id) alongside the
+    coordinates (x, y). With layout=row each output row is one (point, timestep)
+    record, so the stdout stream is already the long form and no reshaping is
+    needed. The output is read from stdout (no output= file is given), which is
+    independent of nprocs: t.rast.what runs the requested number of r.what
+    instances in parallel, merges their intermediate files internally, and emits
+    the merged result to stdout.
 
     :param str strds: the space-time raster dataset to sample
     :param str points_map: name of the input point vector map
@@ -759,44 +582,34 @@ def sample_long(strds, points_map, where=None, nprocs=1):
     try:
         out = gs.read_command("t.rast.what", **kwargs)
     except CalledModuleError:
-        gs.fatal(_("Sampling '{}' with t.rast.what failed.").format(strds))
+        gs.fatal(
+            _("Sampling '{}' with t.rast.what failed.").format(strds)
+        )
 
     # layout=row with -v columns (no header requested):
     #     cat|x|y|start_time|end_time|value
-    good_lines = []
+    # Parse positionally from both ends so the exact column count is not
+    # load-bearing: cat is first, value is last, and x/y/start follow cat.
+    rows = []
     for line in out.splitlines():
         line = line.strip()
-        if line and line.count("|") >= 5:
-            good_lines.append(line)
+        if not line:
+            continue
+        parts = line.split("|")
+        if len(parts) < 6:
+            continue
+        cat, east, north, start, value = (
+            parts[0], parts[1], parts[2], parts[3], parts[-1],
+        )
+        rows.append((cat, east, north, start, value))
 
-    if not good_lines:
+    if not rows:
         gs.fatal(
-            _(
-                "Sampling '{}' returned no records. Check the points map and "
-                "any 'where' clause."
-            ).format(strds)
+            _("Sampling '{}' returned no records. Check the points map and "
+              "any 'where' clause.").format(strds)
         )
 
-    from io import StringIO
-
-    raw = pd.read_csv(
-        StringIO("\n".join(good_lines)),
-        sep="|",
-        header=None,
-        dtype=str,
-        na_filter=False,  # keep "nan"/"", dealt with below
-        engine="c",
-    )
-
-    df = pd.DataFrame(
-        {
-            "cat": raw.iloc[:, 0],
-            "east": raw.iloc[:, 1],
-            "north": raw.iloc[:, 2],
-            "date": raw.iloc[:, 3],
-            "value": raw.iloc[:, -1],
-        }
-    )
+    df = pd.DataFrame(rows, columns=["cat", "east", "north", "date", "value"])
     df["cat"] = pd.to_numeric(df["cat"], errors="coerce").astype("Int64")
     df["east"] = pd.to_numeric(df["east"], errors="coerce")
     df["north"] = pd.to_numeric(df["north"], errors="coerce")
@@ -805,8 +618,12 @@ def sample_long(strds, points_map, where=None, nprocs=1):
     # Parse the timestamps. GRASS absolute time is written as
     # 'YYYY-MM-DD HH:MM:SS', optionally with fractional seconds, which the
     # 'ISO8601' format accepts (pandas >= 2.0 is enforced in
-    # check_dependencies). Parse with an explicit format and treat a
-    # parse failure as an ERROR to report
+    # check_dependencies). Parse with an explicit format rather than letting
+    # pandas infer, and crucially treat a parse failure as an ERROR to report
+    # -- not as a row to silently drop. 'errors=coerce' turns unparseable
+    # strings into NaT; an empty string is a genuine NULL/missing timestamp,
+    # but a non-empty string that fails to parse means the format assumption is
+    # wrong, which the user must know about (otherwise points vanish silently).
     raw_date = df["date"].astype(str).str.strip()
     parsed = pd.to_datetime(raw_date, format="ISO8601", errors="coerce")
     bad = parsed.isna() & (raw_date != "") & (raw_date.str.lower() != "nan")
@@ -823,9 +640,13 @@ def sample_long(strds, points_map, where=None, nprocs=1):
     df["date"] = parsed
 
     # Drop genuine NULL samples (null_value='nan' -> NaN value), rows with no
-    # usable point category, and rows with an empty/missing timestamp.
+    # usable point category, and rows with an empty/missing timestamp. At this
+    # point any NaT remaining is a real missing timestamp, not a parse failure.
+    # The point cat comes from the vector map, so it is identical across the two
+    # datasets and the pairing functions can group on it directly.
     df = df.dropna(subset=["value", "date", "cat"])
-    # After dropping NaN cats, downcast to a plain int.
+    # After dropping NaN cats, downcast to a plain int so groupby / merge_asof
+    # in the pairing functions behave predictably across pandas versions.
     df["cat"] = df["cat"].astype("int64")
 
     return df[["cat", "east", "north", "date", "value"]].reset_index(drop=True)
@@ -891,10 +712,6 @@ def plot_scatter(
     color_by_time,
     fits,
     show_stats,
-    color_by_season=False,
-    density=False,
-    bins=(30, 30),
-    density_colormap="viridis",
     fontsize=10,
     line_width=1.5,
     title=None,
@@ -912,81 +729,32 @@ def plot_scatter(
     x = df["x"].to_numpy(dtype="float64")
     y = df["y"].to_numpy(dtype="float64")
 
-    if density:
-        # 2D histogram density: count of points per bin.
-        nx, ny = bins
-        hb = ax.hist2d(x, y, bins=(nx, ny), cmap=density_colormap)
-        cbar = fig.colorbar(hb[3], ax=ax)
-        cbar.set_label(_("count"))
-    elif color_by_season:
-        # Cyclic coloring by day-of-year on a cyclic colormap, so the same
-        # season in different years shares a color. Map DOY -> [0,1) and use
-        # 'twilight' (a cyclic colormap whose ends meet).
-        t = pd.to_datetime(df[date_col])
-        doy = t.dt.dayofyear.to_numpy(dtype="float64")
-        frac = (doy - 1.0) / 366.0  # [0,1); 366 keeps leap-day inside range
-        sc = ax.scatter(
-            x,
-            y,
-            c=frac,
-            s=point_size,
-            alpha=point_alpha,
-            marker=marker,
-            cmap="twilight",
-            vmin=0.0,
-            vmax=1.0,
-        )
-        cbar = fig.colorbar(sc, ax=ax)
-        cbar.set_label(_("month"))
-        # Tick the colorbar at month boundaries, labelled by month name. The
-        # bar is cyclic, so Jan appears at both ends (the ends meet).
-        import datetime as _dt
-
-        month_starts = [
-            ((_dt.date(2001, m, 1) - _dt.date(2001, 1, 1)).days) / 366.0
-            for m in range(1, 13)
-        ]
-        month_labels = [
-            _dt.date(2001, m, 1).strftime("%b") for m in range(1, 13)
-        ]
-        cbar.set_ticks(month_starts)
-        cbar.set_ticklabels(month_labels)
-    elif color_by_time:
-        # Encode the absolute timestamp as an ordinal for the colormap, then
-        # relabel the colorbar ticks with readable dates.
+    if color_by_time:
+        # Encode the timestamp as an ordinal for the colormap, then relabel the
+        # colorbar ticks with readable dates.
         t = pd.to_datetime(df[date_col])
         tnum = mpl.dates.date2num(t.dt.to_pydatetime())
-        sc = ax.scatter(
-            x, y, c=tnum, s=point_size, alpha=point_alpha, marker=marker, cmap="viridis"
-        )
+        sc = ax.scatter(x, y, c=tnum, s=point_size, alpha=point_alpha,
+                        marker=marker, cmap="viridis")
         cbar = fig.colorbar(sc, ax=ax)
         cbar.set_label(_("time"))
         loc = mpl.dates.AutoDateLocator()
         cbar.ax.yaxis.set_major_locator(loc)
         cbar.ax.yaxis.set_major_formatter(mpl.dates.ConciseDateFormatter(loc))
     else:
-        ax.scatter(
-            x,
-            y,
-            s=point_size,
-            alpha=point_alpha,
-            marker=marker,
-            color=point_color or "tab:blue",
-        )
+        ax.scatter(x, y, s=point_size, alpha=point_alpha, marker=marker,
+                   color=point_color or "tab:blue")
 
     if fits.get("ols"):
         f = fits["ols"]
         xx = np.array([np.nanmin(x), np.nanmax(x)])
         label = "OLS"
         if show_stats:
-            label = _("OLS: slope={s:.3g}, R^2={r:.3f}").format(s=f["slope"], r=f["r2"])
-        ax.plot(
-            xx,
-            f["slope"] * xx + f["intercept"],
-            color="black",
-            lw=line_width,
-            label=label,
-        )
+            label = _("OLS: slope={s:.3g}, R^2={r:.3f}").format(
+                s=f["slope"], r=f["r2"]
+            )
+        ax.plot(xx, f["slope"] * xx + f["intercept"], color="black",
+                lw=line_width, label=label)
 
     if fits.get("lowess"):
         xs, ys = fits["lowess"]
@@ -1027,13 +795,7 @@ def main(options, flags):
     method = options["method"] or "nearest"
     tolerance_opt = options["tolerance"]
     frequency = options["frequency"]
-    lag_opt = options["lag"]
-    lag_window_opt = options["lag_window"]
-    lag_stat = options["lag_stat"] or "sum"
-    nprocs = int(options["nprocs"]) if options["nprocs"] else 0
-    if nprocs <= 0:
-        import multiprocessing
-        nprocs = multiprocessing.cpu_count()
+    nprocs = int(options["nprocs"]) if options["nprocs"] else 1
     lowess_frac = float(options["lowess_frac"]) if options["lowess_frac"] else 0.3
     output = options["output"]
     csv = options["csv"]
@@ -1055,31 +817,19 @@ def main(options, flags):
     show_gam = flags["g"]
     show_stats = flags["t"]
     color_by_time = flags["c"]
-    color_by_season = flags["y"]
-    density = flags["D"]
     grid = flags["d"]
-    bins_opt = options["bins"] or "30,30"
-    density_colormap = options["density_colormap"] or "viridis"
-
-    # Mutually exclusive rendering modes: absolute-time color, cyclic-season
-    # color, and density are three alternative renderings of the same cloud.
-    chosen = [
-        name
-        for name, on in (("-c", color_by_time), ("-y", color_by_season), ("-D", density))
-        if on
-    ]
-    if len(chosen) > 1:
-        gs.fatal(
-            _(
-                "Flags {a} are mutually exclusive; choose at most one rendering "
-                "mode (absolute-time color, cyclic-season color, or density)."
-            ).format(a=", ".join(chosen))
-        )
 
     backend = backend_opt or ("Agg" if output else "WXAgg")
+    # Validate every dependency (and pandas version) up front, before any
+    # GRASS calls or data processing, so failures are immediate rather than
+    # surfacing after the slow sampling/pairing steps. Optional packages are
+    # only required when their flag is set.
     check_dependencies(backend, need_lowess=show_lowess, need_gam=show_gam)
 
-    # Absolute-time guard. Relative time is not supported
+    # Absolute-time guard. Relative time is not supported: without a known
+    # unit a tolerance like '1 day' is meaningless and there is no way to tell
+    # whether two indices are genuinely "close" or comparable, so guarding
+    # against nonsensical input is impossible.
     try:
         tx = gs.parse_command("t.info", flags="g", input=xstrds)
     except CalledModuleError:
@@ -1097,56 +847,36 @@ def main(options, flags):
                 ).format(name)
             )
 
-    # Validate the method / tolerance / frequency combination.
+    # Validate the method / tolerance / frequency combination. The %rules
+    # grammar matches on option presence, not value, so the value-dependent
+    # checks live here.
     aggregate_methods = ("mean", "median", "sum", "min", "max")
     if method == "nearest":
         if frequency:
             gs.fatal(
-                _(
-                    "'frequency' applies only to the aggregate methods, not "
-                    "method=nearest."
-                )
+                _("'frequency' applies only to the aggregate methods, not "
+                  "method=nearest.")
             )
         if not tolerance_opt:
             gs.fatal(
-                _("method=nearest requires a 'tolerance' (e.g. tolerance='1 day').")
+                _("method=nearest requires a 'tolerance' (e.g. tolerance='1 "
+                  "day').")
             )
         tolerance = parse_tolerance(tolerance_opt)
     elif method in aggregate_methods:
         if tolerance_opt:
             gs.fatal(
-                _(
-                    "'tolerance' applies only to method=nearest, not the "
-                    "aggregate methods."
-                )
+                _("'tolerance' applies only to method=nearest, not the "
+                  "aggregate methods.")
             )
         if not frequency:
             gs.fatal(
-                _("method={m} requires a 'frequency' (e.g. frequency='MS').").format(
-                    m=method
-                )
+                _("method={m} requires a 'frequency' (e.g. frequency='MS').")
+                .format(m=method)
             )
         tolerance = None
     else:
         gs.fatal(_("Unknown method '{}'.").format(method))
-
-    # Parse and validate lag options.
-    lag = parse_lag(lag_opt) if lag_opt else None
-    lag_window = None
-    if lag_window_opt:
-        lag_window = parse_lag(lag_window_opt, allow_negative=False)
-        if lag_window <= pd.Timedelta(0):
-            gs.fatal(_("'lag_window' must be a positive duration."))
-        if lag is None:
-            # Window with no explicit lag: window ends at the response time.
-            lag = pd.Timedelta(0)
-    if lag_window_opt and method != "nearest":
-        gs.fatal(
-            _(
-                "Accumulation lag ('lag_window') is currently supported only "
-                "with method=nearest."
-            )
-        )
 
     # Sample each dataset at the vector's points across all its own timesteps.
     gs.message(_("Sampling '{}' at the sample points...").format(xstrds))
@@ -1154,30 +884,18 @@ def main(options, flags):
     gs.message(_("Sampling '{}' at the sample points...").format(ystrds))
     ydf = sample_long(ystrds, points_map, where=where, nprocs=nprocs)
 
-    # Apply lag to the x (driver) dataset before pairing.
-    if lag_window is not None:
-        # Accumulation mode: reduce driver maps in the preceding window per
-        # response time. Produces a driver frame already aligned to response
-        # dates, so it pairs exactly (nearest with a tiny tolerance).
-        gs.message(
-            _("Accumulating driver over {w} (lag {l}, {s})...").format(
-                w=lag_window, l=lag, s=lag_stat
-            )
-        )
-        xdf = apply_lag_accumulate(xdf, ydf, lag, lag_window, lag_stat)
-    elif lag is not None:
-        # Instantaneous shift: relabel driver dates by +lag.
-        gs.message(_("Shifting driver by lag {} ...").format(lag))
-        xdf = apply_lag(xdf, lag)
-
     # Pair the two datasets according to the chosen method.
     if method == "nearest":
-        gs.message(_("Pairing by nearest timestamp within {} ...").format(tolerance))
+        gs.message(
+            _("Pairing by nearest timestamp within {} ...").format(tolerance)
+        )
         df = pair_nearest(xdf, ydf, tolerance)
         date_col = "date"
     else:
         gs.message(
-            _("Aggregating to '{f}' ({m}) and pairing...").format(f=frequency, m=method)
+            _("Aggregating to '{f}' ({m}) and pairing...").format(
+                f=frequency, m=method
+            )
         )
         df = pair_aggregate(xdf, ydf, frequency, method)
         date_col = "period"
@@ -1194,14 +912,10 @@ def main(options, flags):
         fits["ols"] = fit_ols(x, y)
         if fits["ols"]:
             gs.message(
-                _(
-                    "OLS: slope={s:.4g}, intercept={i:.4g}, R^2={r:.3f}, "
-                    "p={p:.3g}, n={n}"
-                ).format(
-                    s=fits["ols"]["slope"],
-                    i=fits["ols"]["intercept"],
-                    r=fits["ols"]["r2"],
-                    p=fits["ols"]["pvalue"],
+                _("OLS: slope={s:.4g}, intercept={i:.4g}, R^2={r:.3f}, "
+                  "p={p:.3g}, n={n}").format(
+                    s=fits["ols"]["slope"], i=fits["ols"]["intercept"],
+                    r=fits["ols"]["r2"], p=fits["ols"]["pvalue"],
                     n=fits["ols"]["n"],
                 )
             )
@@ -1215,15 +929,10 @@ def main(options, flags):
 
     gs.message(_("Creating the figure..."))
     dimensions = (
-        [float(v) for v in plot_dimensions.split(",")] if plot_dimensions else [7, 7]
+        [float(v) for v in plot_dimensions.split(",")]
+        if plot_dimensions
+        else [7, 7]
     )
-    # Parse density bins.
-    try:
-        bx, by = (int(v) for v in bins_opt.split(","))
-        bins_tuple = (bx, by)
-    except (ValueError, TypeError):
-        gs.fatal(_("Could not parse bins '{}'; use 'nx,ny' (e.g. '30,30').").format(bins_opt))
-
     plot_scatter(
         df=df,
         xstrds=xstrds,
@@ -1236,10 +945,6 @@ def main(options, flags):
         color_by_time=color_by_time,
         fits=fits,
         show_stats=show_stats,
-        color_by_season=color_by_season,
-        density=density,
-        bins=bins_tuple,
-        density_colormap=density_colormap,
         fontsize=fontsize,
         line_width=line_width,
         title=title,

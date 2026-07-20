@@ -7,6 +7,10 @@ one or more regression curves are fitted and drawn on top: an ordinary
 least-squares (OLS) line, a LOWESS smoother, and/or a Generalized Additive Model
 (GAM) curve.
 
+> [!WARNING]  
+> This addon is work in progress, with limited testing. Consider this an early alpha version!! Use at your own risk.
+> Do you encounter bugs of do you have suggestions for improvements, please file a bug report.
+
 The module can be used for exploratory analysis of the relationship between two
 co-variables through time, for example a vegetation index against land surface
 temperature, or rainfall against soil moisture. Internally it uses
