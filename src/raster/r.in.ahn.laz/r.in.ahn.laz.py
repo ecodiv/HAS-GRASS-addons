@@ -59,7 +59,7 @@
 # %option G_OPT_F_INPUT
 # % key: script
 # % label: Python script to run for each LAZ tile
-# % description: Python script to process each LAZ tile. First non-comment line must be SUFFIXES = [...] declaring output suffixes. The tile path and output prefix are available as the module-level names LAZ and OUTPUT.
+# % description: Python script to process each LAZ tile. First non-comment line must be SUFFIXES = [...] declaring output suffixes. The tile path and output prefix are available as the module-level names LAZ and OUTPUT; THREADS gives a per-tile thread budget (cores / parallel workers) that internally parallel scripts should honor to avoid oversubscribing the CPU when nprocs > 1.
 # % required: no
 # % guisection: Processing
 # %end
@@ -105,7 +105,7 @@ import sys
 import traceback
 import uuid
 from math import floor
-from multiprocessing import Pool
+from multiprocessing import Pool, get_context
 from urllib.error import URLError, HTTPError
 from urllib.request import urlretrieve
 
@@ -629,7 +629,7 @@ def extract_suffixes(script_path):
     return list(suffixes)
 
 
-def run_script_on_tile(script_path, laz_path, output_prefix):
+def run_script_on_tile(script_path, laz_path, output_prefix, threads=1):
     """
     Run the user-provided Python script for a single LAZ tile.
 
@@ -640,19 +640,26 @@ def run_script_on_tile(script_path, laz_path, output_prefix):
         import grass.script as gs
         gs.run_command("r.in.pdal", input=LAZ, output=OUTPUT + "_dtm", ...)
 
+    THREADS is also injected: a per-tile thread budget the caller computed
+    from cores / parallel-workers. Scripts that run internally parallel work
+    (e.g. a threaded PDAL reader, or a tool's nprocs) should size it with
+    THREADS so that workers * per-tile-threads does not oversubscribe the
+    CPU. Scripts that ignore THREADS are unaffected.
+
     Returns two dicts: raster_by_suffix and vector_by_suffix, mapping
     each suffix to the per-tile map name.
     """
     with open(script_path, "r") as fh:
         script_code = fh.read()
 
-    # The user script runs with a fresh globals dict. LAZ and OUTPUT are
-    # the user-facing interface; the rest are the standard modules we
+    # The user script runs with a fresh globals dict. LAZ, OUTPUT and THREADS
+    # are the user-facing interface; the rest are the standard modules we
     # make available to avoid forcing every script to re-import them.
     script_globals = {
         "__builtins__": __builtins__,
         "LAZ": laz_path,
         "OUTPUT": output_prefix,
+        "THREADS": threads,
         "os": os,
         "gs": gs,
     }
@@ -703,6 +710,87 @@ def run_script_on_tile(script_path, laz_path, output_prefix):
         vector_by_suffix[suffix] = name
 
     return raster_by_suffix, vector_by_suffix
+
+
+def _process_tile_job(job):
+    """Download one AHN tile and run the user script on it (parallel worker).
+
+    Safe to run in parallel processes that share one mapset because:
+      * the region is isolated per-process by gs.RegionManager, which sets
+        the WIND_OVERRIDE env var (process-local under a forked worker) to a
+        PID/UUID-unique saved-region name, and
+      * every output map name is UUID-unique (create_temporary_name).
+
+    The default (global-env) RegionManager is used deliberately: the user
+    script issues gs.run_command calls without an explicit env=, so it can
+    only see the region via the process-global os.environ. Passing an env
+    copy here would hide the region from the user script.
+
+    Never raises: a per-tile failure is reported and returned as an empty
+    result so one bad tile cannot abort the pool.
+    """
+    (
+        script,
+        url,
+        dest,
+        tile_x,
+        tile_y,
+        w_ov,
+        e_ov,
+        s_ov,
+        n_ov,
+        ewres,
+        nsres,
+        keep_laz,
+        threads,
+    ) = job
+
+    result = _download_laz_tile((url, dest))
+    if result is None:
+        return {"path": None}
+
+    # Tile extent clipped to the requested overlap so the outer edge tiles
+    # don't extend beyond what the user asked for. Tiles are 1x1 km with
+    # lower-left (tile_x, tile_y) on the AHN grid.
+    tile_w = max(float(tile_x), w_ov)
+    tile_e = min(float(tile_x) + TILE_SIZE, e_ov)
+    tile_s = max(float(tile_y), s_ov)
+    tile_n = min(float(tile_y) + TILE_SIZE, n_ov)
+
+    # Run the user script inside a per-tile region so its outputs match the
+    # tile extent (and any region change it makes is discarded on exit).
+    gs.verbose(_("Running user script on {laz}").format(laz=result))
+    with gs.RegionManager(
+        n=tile_n,
+        s=tile_s,
+        w=tile_w,
+        e=tile_e,
+        ewres=ewres,
+        nsres=nsres,
+        flags="a",
+    ):
+        # Unique output prefix for this tile (UUID-based, collision-free
+        # across concurrent workers writing into the same mapset).
+        tile_prefix = create_temporary_name("laz_tile")
+        raster_by_suffix, vector_by_suffix = run_script_on_tile(
+            script, result, tile_prefix, threads=threads
+        )
+
+    # Delete the LAZ after processing unless -k was given.
+    if not keep_laz:
+        try:
+            os.remove(result)
+            gs.verbose(_("Deleted LAZ file: {f}").format(f=result))
+        except OSError as e:
+            gs.warning(
+                _("Could not delete LAZ file {f}: {err}").format(f=result, err=e)
+            )
+
+    return {
+        "path": result,
+        "rasters": raster_by_suffix,
+        "vectors": vector_by_suffix,
+    }
 
 
 def main(options, flags):
@@ -871,138 +959,148 @@ def main(options, flags):
         ).format(s=script)
     )
 
+    # Per-tile read-thread budget. Only the addon knows how many tiles run
+    # concurrently, so it publishes THREADS = cores / workers to each tile's
+    # script (injected in run_script_on_tile). This keeps
+    # workers * per-tile-threads from oversubscribing the CPU. With nprocs=1
+    # (serial, or the mask fallback) THREADS == all cores.
+    threads_per_tile = max(1, (os.cpu_count() or 1) // nprocs)
+
+    # One self-contained work item per tile. Everything the worker needs is
+    # passed explicitly rather than captured, so it does not rely on closure
+    # state surviving the fork.
+    worker_jobs = [
+        (
+            script,
+            url,
+            dest,
+            tile_x,
+            tile_y,
+            w_ov,
+            e_ov,
+            s_ov,
+            n_ov,
+            ewres,
+            nsres,
+            keep_laz,
+            threads_per_tile,
+        )
+        for (url, dest, tile_x, tile_y) in jobs
+    ]
+
     # Dictionaries mapping suffix -> list of per-tile map names
     # e.g. {"_0_1m": ["laz_tile_abc_0_1m", "laz_tile_def_0_1m"], ...}
     # A suffix of "" means the script created a map named exactly OUTPUT
     raster_groups = {}
     vector_groups = {}
     downloaded_paths = []
-    tile_count = 0
+    # Mutable one-element list so the nested helper can flip it (closure).
+    validated = [False]
 
-    for url, dest, tile_x, tile_y in jobs:
-        tile_count += 1
-        # Progress bar (g.message -p). Shown at default verbosity; picked
-        # up by GUI tools as a proper progress indicator.
-        gs.percent(tile_count, len(jobs), 1)
-        gs.message(
-            _("Processing tile {n} of {total}").format(
-                n=tile_count, total=len(jobs)
-            )
-        )
+    def _collect_result(res):
+        """Parent-side bookkeeping for one finished tile (runs serially).
 
-        # Download tile
-        result = _download_laz_tile((url, dest))
+        Grouping and intermediate cleanup happen here, in the parent, as
+        each result arrives. This is race-free even under the pool because
+        every map name is UUID-unique, so g.remove/g.list never touch
+        another tile's maps.
+        """
+        result = res.get("path")
         if result is None:
-            continue
-
+            return
         downloaded_paths.append(result)
 
-        # Compute this tile's extent, clipped to the requested overlap so
-        # the outer edge tiles don't extend beyond what the user asked for.
-        # Tiles are 1x1 km with lower-left (tile_x, tile_y) on the AHN grid.
-        tile_w = max(float(tile_x), w_ov)
-        tile_e = min(float(tile_x) + TILE_SIZE, e_ov)
-        tile_s = max(float(tile_y), s_ov)
-        tile_n = min(float(tile_y) + TILE_SIZE, n_ov)
-
-        # Run the user script inside a per-tile region so its outputs
-        # match the tile extent (and so any region changes made by the
-        # user script are discarded when the block exits).
-        with gs.RegionManager(
-            n=tile_n,
-            s=tile_s,
-            w=tile_w,
-            e=tile_e,
-            ewres=ewres,
-            nsres=nsres,
-            flags="a",
-        ):
-            # Create a unique output prefix for this tile
-            tile_prefix = create_temporary_name("laz_tile")
-
-            # Run user script
-            gs.verbose(_("Running user script on {laz}").format(laz=result))
-            raster_by_suffix, vector_by_suffix = run_script_on_tile(
-                script, result, tile_prefix
-            )
-
+        raster_by_suffix = res.get("rasters", {})
+        vector_by_suffix = res.get("vectors", {})
         if not raster_by_suffix and not vector_by_suffix:
             gs.warning(
                 _(
                     "Script did not produce output for tile {laz}; skipping."
                 ).format(laz=result)
             )
-        else:
+            return
+
+        # Validate produced suffixes against SUFFIXES once, on the first tile
+        # that yields output. Completion order is nondeterministic under the
+        # pool, so "first" simply means "first to finish".
+        if not validated[0]:
+            validated[0] = True
+            expected = set(suffixes)
             produced_suffixes = set(raster_by_suffix.keys()) | set(
                 vector_by_suffix.keys()
             )
-
-            # On the first tile, validate produced suffixes against SUFFIXES
-            if tile_count == 1:
-                expected = set(suffixes)
-                extra = produced_suffixes - expected
-                missing = expected - produced_suffixes
-                if extra:
-                    gs.warning(
-                        _(
-                            "User script created maps with suffixes not "
-                            "declared in SUFFIXES: {extra}\n"
-                            "These will be treated as intermediate maps "
-                            "and removed."
-                        ).format(extra=", ".join(sorted(extra)))
-                    )
-                if missing:
-                    gs.warning(
-                        _(
-                            "User script did not produce maps for all "
-                            "declared SUFFIXES. Missing: {miss}"
-                        ).format(miss=", ".join(sorted(missing)))
-                    )
-
-            # Collect expected outputs, clean up intermediates
-            expected_set = set(suffixes)
-
-            for suffix, raster_name in raster_by_suffix.items():
-                if suffix in expected_set:
-                    if suffix not in raster_groups:
-                        raster_groups[suffix] = []
-                    raster_groups[suffix].append(raster_name)
-                    CLEAN_LAY.append(raster_name)
-                else:
-                    # Intermediate raster — remove it
-                    gs.run_command(
-                        "g.remove",
-                        type="raster",
-                        name=raster_name,
-                        flags="f",
-                        quiet=True,
-                    )
-
-            for suffix, vector_name in vector_by_suffix.items():
-                if suffix in expected_set:
-                    if suffix not in vector_groups:
-                        vector_groups[suffix] = []
-                    vector_groups[suffix].append(vector_name)
-                    CLEAN_LAY.append(vector_name)
-                else:
-                    # Intermediate vector — remove it
-                    gs.run_command(
-                        "g.remove",
-                        type="vector",
-                        name=vector_name,
-                        flags="f",
-                        quiet=True,
-                    )
-
-        # Delete LAZ file after processing unless -k flag is set
-        if not keep_laz:
-            try:
-                os.remove(result)
-                gs.verbose(_("Deleted LAZ file: {f}").format(f=result))
-            except OSError as e:
+            extra = produced_suffixes - expected
+            missing = expected - produced_suffixes
+            if extra:
                 gs.warning(
-                    _("Could not delete LAZ file {f}: {err}").format(f=result, err=e)
+                    _(
+                        "User script created maps with suffixes not "
+                        "declared in SUFFIXES: {extra}\n"
+                        "These will be treated as intermediate maps "
+                        "and removed."
+                    ).format(extra=", ".join(sorted(extra)))
                 )
+            if missing:
+                gs.warning(
+                    _(
+                        "User script did not produce maps for all "
+                        "declared SUFFIXES. Missing: {miss}"
+                    ).format(miss=", ".join(sorted(missing)))
+                )
+
+        # Collect expected outputs, clean up intermediates
+        expected_set = set(suffixes)
+
+        for suffix, raster_name in raster_by_suffix.items():
+            if suffix in expected_set:
+                raster_groups.setdefault(suffix, []).append(raster_name)
+                CLEAN_LAY.append(raster_name)
+            else:
+                # Intermediate raster — remove it
+                gs.run_command(
+                    "g.remove",
+                    type="raster",
+                    name=raster_name,
+                    flags="f",
+                    quiet=True,
+                )
+
+        for suffix, vector_name in vector_by_suffix.items():
+            if suffix in expected_set:
+                vector_groups.setdefault(suffix, []).append(vector_name)
+                CLEAN_LAY.append(vector_name)
+            else:
+                # Intermediate vector — remove it
+                gs.run_command(
+                    "g.remove",
+                    type="vector",
+                    name=vector_name,
+                    flags="f",
+                    quiet=True,
+                )
+
+    # Process tiles: in parallel when nprocs > 1, otherwise serially. The
+    # heavy work (download + PDAL + import) runs in the worker; the light
+    # bookkeeping in _collect_result runs here as each result arrives.
+    if nprocs > 1 and len(worker_jobs) > 1:
+        gs.message(
+            _(
+                "Processing {n} tiles: {p} parallel worker(s), "
+                "{t} read-thread(s) per tile"
+            ).format(n=len(worker_jobs), p=nprocs, t=threads_per_tile)
+        )
+        # 'fork' so workers inherit the GRASS session ($GISRC); the region is
+        # isolated per worker via WIND_OVERRIDE inside _process_tile_job.
+        with get_context("fork").Pool(processes=nprocs) as pool:
+            for i, res in enumerate(
+                pool.imap_unordered(_process_tile_job, worker_jobs), start=1
+            ):
+                gs.percent(i, len(worker_jobs), 1)
+                _collect_result(res)
+    else:
+        for i, job in enumerate(worker_jobs, start=1):
+            gs.percent(i, len(worker_jobs), 1)
+            _collect_result(_process_tile_job(job))
 
     # Save list of downloaded files if requested
     if laz_files:

@@ -16,7 +16,7 @@ _r.in.ahn.laz_ has two modes of operation, selected by whether the **script=** o
 
 **Mode 1, download only.** If **script=** is not provided, the module just downloads every LAZ tile that intersects the current region and either prints their full paths to standard output or, if **laz\_files=** is given, writes them to that file. No raster output is produced.
 
-**Mode 2, download + process + patch.** If **script=** points to a user Python script, the module processes tiles one at a time: download the tile, run the script on it, delete the LAZ file (unless **\-k** is set), and collect the script's raster and/or vector outputs. After all tiles are processed, the per-tile outputs are patched into one or more final maps whose names are built from **output=** and the suffixes declared by the script (see _User script interface_ below). In this mode, **output=** is required; **laz\_files=** is still honored and writes the list of downloaded files as a side effect.
+**Mode 2, download + process + patch.** If **script=** points to a user Python script, the module processes tiles by: download the tile, run the script on it, delete the LAZ file (unless **\-k** is set), and collect the script's raster and/or vector outputs. With **nprocs** > 1 the tiles are processed in parallel, up to **nprocs** at a time (each in its own process with an isolated computational region); the per-tile thread budget `THREADS` is scaled down accordingly so the total thread count stays near the core count. After all tiles are processed, the per-tile outputs are patched into one or more final maps whose names are built from **output=** and the suffixes declared by the script (see _User script interface_ below). In this mode, **output=** is required; **laz\_files=** is still honored and writes the list of downloaded files as a side effect. If a raster mask is active, processing falls back to serial (**nprocs=1**).
 
 ## Tile selection
 
@@ -32,8 +32,9 @@ A user script is a plain Python file. Its structure is:
 2.  The rest of the file is arbitrary Python. When the script runs, the following names are pre-injected into its global namespace:
     1.  `LAZ`: Full path to the LAZ tile file that was just downloaded.
     2.  `OUTPUT`: Unique per-tile name prefix. Every map the script creates whose name starts with `OUTPUT + suffix` (where suffix is one of the strings in `SUFFIXES`) is collected for patching.
-    3.  `os`: Standard `os` module, pre-imported for convenience; the script can use it without import os.
-    4.  `gs`: grass.script, pre-imported for convenience; no need to import it in the script.
+    3.  `THREADS`: Per-tile thread budget, computed as cores / parallel workers (i.e. `cpu_count() // nprocs`, at least 1). Scripts that run internally parallel work — a threaded PDAL reader, a tool's `nprocs`, a numpy thread pool — should size it with `THREADS` so that workers × per-tile-threads does not oversubscribe the CPU when **nprocs** > 1. With **nprocs=1** it equals all cores. Scripts that ignore `THREADS` are unaffected.
+    4.  `os`: Standard `os` module, pre-imported for convenience; the script can use it without import os.
+    5.  `gs`: grass.script, pre-imported for convenience; no need to import it in the script.
 
 The script must produce one raster or vector map per declared suffix, named exactly `OUTPUT + suffix`. Maps whose names match `OUTPUT*` but whose suffix is not in `SUFFIXES` are treated as intermediate and removed automatically after the tile completes (the module warns once, on the first tile, when this happens). Maps that do not start with `OUTPUT` are left alone — the user script is responsible for cleaning those up itself.
 
