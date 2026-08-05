@@ -1,0 +1,71 @@
+<h2>DESCRIPTION</h2>
+
+<i>m.printmap.gxw</i> converts a GRASS workspace file (<b>input</b>, a
+<tt>.gxw</tt> saved from the GUI) into an <i><a
+href="m.printmap.md">m.printmap</a></i> spec file (<b>output</b>). Each display
+command in the workspace is translated into the matching <i>m.printmap</i> layer
+type, so an existing GUI map composition can be turned into a reusable, editable
+spec and rendered with <i>m.printmap</i>.
+
+<h2>NOTES</h2>
+
+The layers of the <b>first</b> display are converted. Their order is flipped to
+<i>m.printmap</i>'s bottom-to-top convention, and overlays (legends, scale bar,
+grid) are placed on top.
+
+<p>
+Only visible (checked) layers are converted.
+
+<p>
+Supported commands: <i>d.rast</i>, <i>d.vect</i>, <i>d.legend</i>,
+<i>d.legend.vect</i>, <i>d.barscale</i> and <i>d.grid</i>. Any other command is
+reported and skipped.
+
+<p>
+A <i>d.vect</i> that also labels features (has an <b>attribute_column</b>) is
+split into a <b>vector</b> layer plus a <b>labels</b> layer.
+
+<p>
+The workspace's display extent is not stored, because <i>m.printmap</i> renders
+the current region. The equivalent <i>g.region</i> command is printed so the
+view can be reproduced before rendering.
+
+<p>
+This addon was heavily inspired by <i><a href="m.printws.md">m.printws</a></i>.
+That addon opens a workspace file and creates a map sheet according to its
+visible contents. This addon, together with <i><a
+href="m.printmap.md">m.printmap</a></i>, offers a complementary approach:
+instead of printing the workspace directly, it turns the workspace into an
+editable spec file. You can then adjust the layers — order, opacity, or add new
+ones — and render the result with <i>m.printmap</i>.
+
+<h2>EXAMPLE</h2>
+
+<div class="code">
+  <pre>
+m.printmap.gxw input=rotterdam.gxw output=rotterdam.spec
+
+# set the region as printed by the command above, then:
+
+# list the layers
+m.printmap spec=rotterdam.spec operation=list
+
+# Render the map
+m.printmap spec=rotterdam.spec operation=render output=rotterdam.png
+</pre>
+</div>
+
+<h2>SEE ALSO</h2>
+
+<i><a href="m.printmap.md">m.printmap</a>, <a href="m.printws.md">m.printws</a>,
+<a href="d.rast.md">d.rast</a>, <a href="d.vect.md">d.vect</a>, <a
+href="d.legend.md">d.legend</a></i>
+
+<h2>AUTHOR</h2>
+
+<a href="https://ecodiv.earth">Paulo van Breugel</a>, <a
+href="https://has.nl">HAS green academy</a>, <a
+href="https://www.has.nl/en/research/professorships/innovative-bio-monitoring-professorship/">Innovative
+Biomonitoring research group</a>, <a
+href="https://www.has.nl/en/research/professorships/climate-robust-landscapes-professorship/">Climate-robust
+Landscapes research group</a>
