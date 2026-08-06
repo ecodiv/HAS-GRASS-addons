@@ -1,0 +1,970 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+ <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+ <meta name="Author" content="GRASS Development Team">
+ <meta http-equiv="content-language" content="en-us">
+ <meta name="viewport" content="width=device-width, initial-scale=1">
+ <title>m.printmap - GRASS manual</title>
+ <meta name="description" content="m.printmap: Composite raster, vector, legend and label layers into a PNG with per-layer opacity.">
+ <meta name="keywords" content="cartography, map, export, printing">
+ <link rel="stylesheet" href="grassdocs.css" type="text/css">
+</head>
+<body bgcolor="white">
+<div id="container">
+
+<a href="file:///usr/local/grassmaster/grass86/docs/html/index.html"><img src="grass_logo.png" alt="GRASS logo"></a>
+<script>
+// Create hamburger menu TOC HTML elements by the JavaScript
+let temp = document.createElement('template');
+const toc = '<ul class="toc-mobile-screen" id="toc-mobile-screen">' + 
+'<li><a class="toc-item" href="#description">DESCRIPTION</a>' + 
+'<ul>' + 
+'<li><a class="toc-item" href="#spec-file">Spec file</a>' + 
+'</li>' + 
+'<li><a class="toc-item" href="#layer-types">Layer types</a>' + 
+'</li>' + 
+'<li><a class="toc-item" href="#operations">Operations</a>' + 
+'</li>' + 
+'<li><a class="toc-item" href="#opacity-and-layer-order">OPACITY AND LAYER ORDER</a>' + 
+'</li>' + 
+'<li><a class="toc-item" href="#margin-around-the-map">MARGIN AROUND THE MAP</a>' + 
+'</li>' + 
+'<li><a class="toc-item" href="#placing-elements-outside-the-map">PLACING ELEMENTS OUTSIDE THE MAP</a>' + 
+'</li>' + 
+'<li><a class="toc-item" href="#figure-size-and-resolution">FIGURE SIZE AND RESOLUTION</a>' + 
+'</li>' + 
+'<li><a class="toc-item" href="#fonts">FONTS</a>' + 
+'</li>' + 
+'<li><a class="toc-item" href="#template-settings">TEMPLATE SETTINGS</a>' + 
+'</li>' + 
+'</ul></li>' + 
+'<li><a class="toc-item" href="#workspace-import">WORKSPACE IMPORT</a>' + 
+'</li>' + 
+'<li><a class="toc-item" href="#notes">NOTES</a>' + 
+'</li>' + 
+'<li><a class="toc-item" href="#example">EXAMPLE</a>' + 
+'<ul>' + 
+'<li><a class="toc-item" href="#example-1">Example 1</a>' + 
+'</li>' + 
+'<li><a class="toc-item" href="#example-2">Example 2</a>' + 
+'</li>' + 
+'<li><a class="toc-item" href="#example-3">Example 3</a>' + 
+'</li>' + 
+'<li><a class="toc-item" href="#example-4">Example 4</a>' + 
+'</li>' + 
+'<li><a class="toc-item" href="#example-5">Example 5</a>' + 
+'</li>' + 
+'</ul></li>' + 
+'<li><a class="toc-item" href="#see-also">SEE ALSO</a>' + 
+'</li>' + 
+'<li><a class="toc-item" href="#author">AUTHOR</a>' + 
+'</li>' +
+'<a class="close" href="#">' +
+'<img src="./hamburger_menu_close.svg" alt="close">' +
+'</a>' +
+'</ul>' +
+'<a class="hamburger" href="#toc-mobile-screen">' +
+'<img src="./hamburger_menu.svg" alt="menu">' +
+'</a>';
+temp.innerHTML = toc;
+const grassLogoLink = document.getElementsByTagName("img")[0];
+grassLogoLink.after(temp.content);
+</script>
+<hr class="header">
+
+<h2>NAME</h2>
+<em><b>m.printmap</b></em>  - Composite raster, vector, legend and label layers into a PNG with per-layer opacity.
+<h2>KEYWORDS</h2>
+<a href="file:///usr/local/grassmaster/grass86/docs/html/cartography.html">cartography</a>, <a href="file:///usr/local/grassmaster/grass86/docs/html/topic_map.html">map</a>, <a href="file:///usr/local/grassmaster/grass86/docs/html/keywords.html#export">export</a>, <a href="file:///usr/local/grassmaster/grass86/docs/html/keywords.html#printing">printing</a>
+<h2>SYNOPSIS</h2>
+<div id="name"><b>m.printmap</b><br></div>
+<b>m.printmap --help</b><br>
+<div id="synopsis"><b>m.printmap</b>  [<b>spec</b>=<em>name</em>]   [<b>new_spec</b>=<em>name</em>]  <b>operation</b>=<em>string</em>  [<b>type</b>=<em>string</em>]   [<b>position</b>=<em>string</em>]   [<b>opacity</b>=<em>float</em>]   [<b>background</b>=<em>name</em>]   [<b>output</b>=<em>name</em>]   [<b>width</b>=<em>integer</em>]   [<b>figure_width</b>=<em>float</em>]   [<b>figure_height</b>=<em>float</em>]   [<b>dpi</b>=<em>integer</em>]   [<b>margin</b>=<em>integer</em>]   [<b>font</b>=<em>string</em>]   [<b>fontsize</b>=<em>float</em>]   [<b>solid_color</b>=<em>name</em>]   [<b>raster</b>=<em>name</em>]   [<b>values</b>=<em>string</em>]   [<b>vector</b>=<em>name</em>]   [<b>display_type</b>=<em>string</em>]   [<b>color</b>=<em>name</em>]   [<b>fill_color</b>=<em>name</em>]   [<b>line_width</b>=<em>float</em>]   [<b>cats</b>=<em>range</em>]   [<b>where</b>=<em>sql_query</em>]   [<b>icon</b>=<em>string</em>]   [<b>size</b>=<em>float</em>]   [<b>labels</b>=<em>name</em>]   [<b>label_type</b>=<em>string</em>]   [<b>attribute_column</b>=<em>name</em>]   [<b>label_font_scale</b>=<em>float</em>]   [<b>label_color</b>=<em>name</em>]   [<b>label_font</b>=<em>string</em>]   [<b>xref</b>=<em>string</em>]   [<b>label_cats</b>=<em>range</em>]   [<b>label_where</b>=<em>sql_query</em>]   [<b>legend_raster_map</b>=<em>name</em>]   [<b>legend_raster_title</b>=<em>string</em>]   [<b>legend_raster_at</b>=<em>float</em>[,<i>float</i>,...]]   [<b>legend_raster_font_scale</b>=<em>float</em>]   [<b>legend_raster_title_scale</b>=<em>float</em>]   [<b>legend_raster_digits</b>=<em>integer</em>]   [<b>legend_raster_flags</b>=<em>string</em>[,<i>string</i>,...]]   [<b>legend_raster_labelnum</b>=<em>integer</em>]   [<b>legend_raster_label_values</b>=<em>string</em>]   [<b>legend_raster_use</b>=<em>string</em>]   [<b>legend_raster_border_color</b>=<em>name</em>]   [<b>legend_raster_bgcolor</b>=<em>name</em>]   [<b>legend_vector_map</b>=<em>name</em>]   [<b>legend_vector_at</b>=<em>float</em>[,<i>float</i>,...]]   [<b>legend_vector_title</b>=<em>string</em>]   [<b>legend_vector_columns</b>=<em>integer</em>]   [<b>legend_vector_symbol_size</b>=<em>integer</em>]   [<b>legend_vector_font_scale</b>=<em>float</em>]   [<b>legend_vector_font</b>=<em>string</em>]   [<b>legend_vector_bgcolor</b>=<em>name</em>]   [<b>legend_vector_border_color</b>=<em>name</em>]   [<b>barscale_at</b>=<em>float</em>[,<i>float</i>,...]]   [<b>barscale_style</b>=<em>string</em>]   [<b>barscale_length</b>=<em>float</em>]   [<b>barscale_units</b>=<em>string</em>]   [<b>barscale_segment</b>=<em>integer</em>]   [<b>barscale_font_scale</b>=<em>float</em>]   [<b>barscale_color</b>=<em>string</em>]   [<b>barscale_bgcolor</b>=<em>string</em>]   [<b>barscale_text_position</b>=<em>string</em>]   [<b>barscale_flags</b>=<em>string</em>]   [<b>grid_size</b>=<em>string</em>]   [<b>grid_color</b>=<em>string</em>]   [<b>grid_border_color</b>=<em>string</em>]   [<b>grid_text_color</b>=<em>string</em>]   [<b>grid_font_scale</b>=<em>float</em>]   [<b>grid_width</b>=<em>float</em>]   [<b>grid_flags</b>=<em>string</em>]   [<b>image</b>=<em>name</em>]   [<b>image_at</b>=<em>float</em>[,<i>float</i>,...]]   [--<b>overwrite</b>]  [--<b>help</b>]  [--<b>verbose</b>]  [--<b>quiet</b>]  [--<b>ui</b>] 
+</div>
+
+<div id="flags">
+<h3>Flags:</h3>
+<dl>
+<dt><b>--overwrite</b></dt>
+<dd>Allow output files to overwrite existing files</dd>
+<dt><b>--help</b></dt>
+<dd>Print usage summary</dd>
+<dt><b>--verbose</b></dt>
+<dd>Verbose module output</dd>
+<dt><b>--quiet</b></dt>
+<dd>Quiet module output</dd>
+<dt><b>--ui</b></dt>
+<dd>Force launching GUI dialog</dd>
+</dl>
+</div>
+
+<div id="parameters">
+<h3>Parameters:</h3>
+<dl>
+<dt><b>spec</b>=<em>name</em></dt>
+<dd>Layer spec file (existing)</dd>
+<dd>Existing layer specification file to read or update</dd>
+
+<dt><b>new_spec</b>=<em>name</em></dt>
+<dd>Layer spec file (new)</dd>
+<dd>New layer specification file to create</dd>
+
+<dt><b>operation</b>=<em>string</em>&nbsp;<b>[required]</b></dt>
+<dd>Action to perform on the spec file (update = change options of an existing layer; settings = set template settings)</dd>
+<dd>Options: <em>add, replace, update, render, list, delete, settings</em></dd>
+<dd>Default: <em>add</em></dd>
+
+<dt><b>type</b>=<em>string</em></dt>
+<dd>Layer type (required for operation=add and operation=replace)</dd>
+<dd>Options: <em>solid, raster, vector, labels, legend_raster, legend_vector, barscale, grid, image</em></dd>
+
+<dt><b>position</b>=<em>string</em></dt>
+<dd>1-based layer index; 0 = at the end (append/last layer)</dd>
+<dd>Default: <em>0</em></dd>
+
+<dt><b>opacity</b>=<em>float</em></dt>
+<dd>Layer opacity at compositing (0 = invisible, 1 = fully opaque)</dd>
+<dd>Options: <em>0.0-1.0</em></dd>
+<dd>Default: <em>1.0</em></dd>
+
+<dt><b>background</b>=<em>name</em></dt>
+<dd>Image background color</dd>
+<dd>Background color of the output image, i.e. the outer canvas (operation=render)</dd>
+<dd>Default: <em>none</em></dd>
+
+<dt><b>output</b>=<em>name</em></dt>
+<dd>Output PNG file</dd>
+
+<dt><b>width</b>=<em>integer</em></dt>
+<dd>Total output width in pixels (default 1200; quick pixel-based output)</dd>
+
+<dt><b>figure_width</b>=<em>float</em></dt>
+<dd>Figure width in cm (physical output; needs dpi)</dd>
+
+<dt><b>figure_height</b>=<em>float</em></dt>
+<dd>Figure height in cm (physical output; needs dpi)</dd>
+
+<dt><b>dpi</b>=<em>integer</em></dt>
+<dd>Resolution in dpi: sizes point-based fonts and line widths (both modes) and the figure in physical mode</dd>
+<dd>Default: <em>96</em></dd>
+
+<dt><b>margin</b>=<em>integer</em></dt>
+<dd>Margin in pixels around the map, filled by the solid layer (operation=render)</dd>
+<dd>Default: <em>0</em></dd>
+
+<dt><b>font</b>=<em>string</em></dt>
+<dd>Global render font</dd>
+<dd>Default: <em>DejaVuSansCondensed</em></dd>
+
+<dt><b>fontsize</b>=<em>float</em></dt>
+<dd>Base font size in points; per-element sizes are ratios of this</dd>
+<dd>Default: <em>12</em></dd>
+
+<dt><b>solid_color</b>=<em>name</em></dt>
+<dd>Color</dd>
+<dd>Fill color for a solid layer</dd>
+<dd>Default: <em>white</em></dd>
+
+<dt><b>raster</b>=<em>name</em></dt>
+<dd>Raster map to display</dd>
+
+<dt><b>values</b>=<em>string</em></dt>
+<dd>List of raster values to display (others transparent)</dd>
+
+<dt><b>vector</b>=<em>name</em></dt>
+<dd>Name of input vector map</dd>
+<dd>Vector map to display</dd>
+
+<dt><b>display_type</b>=<em>string</em></dt>
+<dd>Vector feature type</dd>
+<dd>Options: <em>area, line, boundary, point, centroid</em></dd>
+<dd>Default: <em>area</em></dd>
+
+<dt><b>color</b>=<em>name</em></dt>
+<dd>Color</dd>
+<dd>Vector line color</dd>
+<dd>Default: <em>black</em></dd>
+
+<dt><b>fill_color</b>=<em>name</em></dt>
+<dd>Color</dd>
+<dd>Vector fill color</dd>
+<dd>Default: <em>none</em></dd>
+
+<dt><b>line_width</b>=<em>float</em></dt>
+<dd>Vector line width in points (1 pt = 1 px at 96 dpi)</dd>
+
+<dt><b>cats</b>=<em>range</em></dt>
+<dd>Category values</dd>
+<dd>Category values to display</dd>
+
+<dt><b>where</b>=<em>sql_query</em></dt>
+<dd>WHERE conditions of SQL statement without 'where' keyword</dd>
+<dd>WHERE condition of SQL statement to select features</dd>
+
+<dt><b>icon</b>=<em>string</em></dt>
+<dd>Point/centroid symbol (e.g. basic/circle)</dd>
+
+<dt><b>size</b>=<em>float</em></dt>
+<dd>Point/centroid symbol size in points (1 pt = 1 px at 96 dpi)</dd>
+
+<dt><b>labels</b>=<em>name</em></dt>
+<dd>Name of input vector map</dd>
+<dd>Vector map to label</dd>
+
+<dt><b>label_type</b>=<em>string</em></dt>
+<dd>Feature type to label</dd>
+<dd>Options: <em>area, line, boundary, point, centroid</em></dd>
+<dd>Default: <em>area</em></dd>
+
+<dt><b>attribute_column</b>=<em>name</em></dt>
+<dd>Attribute column to label with</dd>
+
+<dt><b>label_font_scale</b>=<em>float</em></dt>
+<dd>Label text size as a ratio of the base font size (default 1)</dd>
+
+<dt><b>label_color</b>=<em>name</em></dt>
+<dd>Color</dd>
+<dd>Label text color</dd>
+<dd>Default: <em>black</em></dd>
+
+<dt><b>label_font</b>=<em>string</em></dt>
+<dd>Label font</dd>
+
+<dt><b>xref</b>=<em>string</em></dt>
+<dd>Label horizontal reference</dd>
+<dd>Options: <em>left, center, right</em></dd>
+
+<dt><b>label_cats</b>=<em>range</em></dt>
+<dd>Category values</dd>
+<dd>Category values to label</dd>
+
+<dt><b>label_where</b>=<em>sql_query</em></dt>
+<dd>WHERE conditions of SQL statement without 'where' keyword</dd>
+<dd>WHERE condition of SQL statement to select features to label</dd>
+
+<dt><b>legend_raster_map</b>=<em>name</em></dt>
+<dd>Raster map the legend describes</dd>
+
+<dt><b>legend_raster_title</b>=<em>string</em></dt>
+<dd>Legend title</dd>
+
+<dt><b>legend_raster_at</b>=<em>float[,<i>float</i>,...]</em></dt>
+<dd>Placement as bottom,top,left,right (percent of the map; &lt;0 or &gt;100 places it outside the map)</dd>
+
+<dt><b>legend_raster_font_scale</b>=<em>float</em></dt>
+<dd>Legend label size as a ratio of the base font size (default 1)</dd>
+
+<dt><b>legend_raster_title_scale</b>=<em>float</em></dt>
+<dd>Legend title size as a ratio of the base font size (default 1)</dd>
+
+<dt><b>legend_raster_digits</b>=<em>integer</em></dt>
+<dd>Number of digits after the decimal point</dd>
+
+<dt><b>legend_raster_flags</b>=<em>string[,<i>string</i>,...]</em></dt>
+<dd>Flags passed to d.legend</dd>
+<dd>Options: <em>v, c, n, f, l, t, s, d</em></dd>
+
+<dt><b>legend_raster_labelnum</b>=<em>integer</em></dt>
+<dd>Number of labels for a smooth gradient legend</dd>
+
+<dt><b>legend_raster_label_values</b>=<em>string</em></dt>
+<dd>Specific values to label in the legend</dd>
+
+<dt><b>legend_raster_use</b>=<em>string</em></dt>
+<dd>List of raster values to draw in the legend</dd>
+
+<dt><b>legend_raster_border_color</b>=<em>name</em></dt>
+<dd>Color</dd>
+<dd>Legend border color</dd>
+<dd>Default: <em>none</em></dd>
+
+<dt><b>legend_raster_bgcolor</b>=<em>name</em></dt>
+<dd>Color</dd>
+<dd>Legend box background color</dd>
+<dd>Default: <em>none</em></dd>
+
+<dt><b>legend_vector_map</b>=<em>name</em></dt>
+<dd>Name of input vector map</dd>
+<dd>Vector map the legend describes</dd>
+
+<dt><b>legend_vector_at</b>=<em>float[,<i>float</i>,...]</em></dt>
+<dd>Top-left placement as x,y (percent of the map; &lt;0 or &gt;100 places it outside the map)</dd>
+
+<dt><b>legend_vector_title</b>=<em>string</em></dt>
+<dd>Legend title</dd>
+
+<dt><b>legend_vector_columns</b>=<em>integer</em></dt>
+<dd>Number of legend columns</dd>
+
+<dt><b>legend_vector_symbol_size</b>=<em>integer</em></dt>
+<dd>Legend symbol size in points (1 pt = 1 px at 96 dpi)</dd>
+
+<dt><b>legend_vector_font_scale</b>=<em>float</em></dt>
+<dd>Legend font size as a ratio of the base font size (default 1)</dd>
+
+<dt><b>legend_vector_font</b>=<em>string</em></dt>
+<dd>Legend font</dd>
+
+<dt><b>legend_vector_bgcolor</b>=<em>name</em></dt>
+<dd>Color</dd>
+<dd>Background color (a color enables the background box)</dd>
+<dd>Default: <em>none</em></dd>
+
+<dt><b>legend_vector_border_color</b>=<em>name</em></dt>
+<dd>Color</dd>
+<dd>Background border color</dd>
+<dd>Default: <em>black</em></dd>
+
+<dt><b>barscale_at</b>=<em>float[,<i>float</i>,...]</em></dt>
+<dd>Barscale placement as x,y (percent)</dd>
+
+<dt><b>barscale_style</b>=<em>string</em></dt>
+<dd>Barscale style (see d.barscale)</dd>
+
+<dt><b>barscale_length</b>=<em>float</em></dt>
+<dd>Barscale length (in map units)</dd>
+
+<dt><b>barscale_units</b>=<em>string</em></dt>
+<dd>Barscale length units</dd>
+<dd>Options: <em>meters, kilometers, feet, miles, nautmiles</em></dd>
+
+<dt><b>barscale_segment</b>=<em>integer</em></dt>
+<dd>Number of barscale segments</dd>
+
+<dt><b>barscale_font_scale</b>=<em>float</em></dt>
+<dd>Barscale font size as a ratio of the base font size (default 1)</dd>
+
+<dt><b>barscale_color</b>=<em>string</em></dt>
+<dd>Barscale color</dd>
+
+<dt><b>barscale_bgcolor</b>=<em>string</em></dt>
+<dd>Barscale background color</dd>
+
+<dt><b>barscale_text_position</b>=<em>string</em></dt>
+<dd>Barscale text position</dd>
+<dd>Options: <em>under, over, left, right</em></dd>
+
+<dt><b>barscale_flags</b>=<em>string</em></dt>
+<dd>Flags passed to d.barscale</dd>
+<dd>Options: <em>n, t, f</em></dd>
+
+<dt><b>grid_size</b>=<em>string</em></dt>
+<dd>Grid spacing (map units, or DDD:MM:SS with the g flag)</dd>
+
+<dt><b>grid_color</b>=<em>string</em></dt>
+<dd>Grid line color</dd>
+
+<dt><b>grid_border_color</b>=<em>string</em></dt>
+<dd>Grid border color</dd>
+
+<dt><b>grid_text_color</b>=<em>string</em></dt>
+<dd>Grid text color</dd>
+
+<dt><b>grid_font_scale</b>=<em>float</em></dt>
+<dd>Grid font size as a ratio of the base font size (default 0.5)</dd>
+
+<dt><b>grid_width</b>=<em>float</em></dt>
+<dd>Grid line width in points (1 pt = 1 px at 96 dpi)</dd>
+
+<dt><b>grid_flags</b>=<em>string</em></dt>
+<dd>Flags passed to d.grid</dd>
+<dd>Options: <em>n, b, t, g, w, c, d, f, a</em></dd>
+
+<dt><b>image</b>=<em>name</em></dt>
+<dd>Image file to overlay (type=image)</dd>
+
+<dt><b>image_at</b>=<em>float[,<i>float</i>,...]</em></dt>
+<dd>Box as bottom,top,left,right (percent of the map; &lt;0 or &gt;100 places it outside); aspect kept, anchored lower-left</dd>
+
+</dl>
+</div>
+<div class="toc">
+<h4 class="toc">Table of contents</h4>
+<ul class="toc">
+    <li class="toc"><a href="#description" class="toc">DESCRIPTION</a>
+    <ul class="toc">
+        <li class="toc"><a href="#spec-file" class="toc">Spec file</a></li>
+        <li class="toc"><a href="#layer-types" class="toc">Layer types</a></li>
+        <li class="toc"><a href="#operations" class="toc">Operations</a></li>
+        <li class="toc"><a href="#opacity-and-layer-order" class="toc">OPACITY AND LAYER ORDER</a></li>
+        <li class="toc"><a href="#margin-around-the-map" class="toc">MARGIN AROUND THE MAP</a></li>
+        <li class="toc"><a href="#placing-elements-outside-the-map" class="toc">PLACING ELEMENTS OUTSIDE THE MAP</a></li>
+        <li class="toc"><a href="#figure-size-and-resolution" class="toc">FIGURE SIZE AND RESOLUTION</a></li>
+        <li class="toc"><a href="#fonts" class="toc">FONTS</a></li>
+        <li class="toc"><a href="#template-settings" class="toc">TEMPLATE SETTINGS</a></li>
+    </ul></li>
+    <li class="toc"><a href="#workspace-import" class="toc">WORKSPACE IMPORT</a></li>
+    <li class="toc"><a href="#notes" class="toc">NOTES</a></li>
+    <li class="toc"><a href="#example" class="toc">EXAMPLE</a>
+    <ul class="toc">
+        <li class="toc"><a href="#example-1" class="toc">Example 1</a></li>
+        <li class="toc"><a href="#example-2" class="toc">Example 2</a></li>
+        <li class="toc"><a href="#example-3" class="toc">Example 3</a></li>
+        <li class="toc"><a href="#example-4" class="toc">Example 4</a></li>
+        <li class="toc"><a href="#example-5" class="toc">Example 5</a></li>
+    </ul></li>
+    <li class="toc"><a href="#see-also" class="toc">SEE ALSO</a></li>
+    <li class="toc"><a href="#author" class="toc">AUTHOR</a></li>
+</ul>
+</div>
+<h2><a name="description">DESCRIPTION</a></h2>
+
+<i>m.printmap</i> combines raster, vector, legend and label layers into a single
+PNG image. Like in the interactive map display, each layer can be made partly
+transparent. The description and settings of layers are written to a small JSON
+<b>spec file</b>. They are build up one layer at a time and then render.
+
+<p>
+Working with the module therefore has two phases. The first phase consists of
+one or more steps to <i>Build</i> the spec file. Each run adds (or edits) one
+layer. The user picks a layer <b>type</b>, fills in that type's options and runs
+it to append the layerto the spec file. The second phase is to <i>render</i> the
+spec file (<tt>operation=render</tt>) to a PNG.
+
+<p>
+Give the spec file with <b>new_spec</b> to start a new map, or <b>spec</b> to
+read or update an existing one (these are mutually exclusive). Each <b>type</b>
+has its own tab of options in the GUI. You can fill in more than one, but note
+that only the options for the chosen type are used.
+
+<h3><a name="spec-file">Spec file</a></h3>
+
+The module is designed to make building the spec file easy and then render it to
+a PNG. The spec file is, however, also a plain, human-readable JSON file that
+you can write or edit by hand in any text editor. This is handy for fine-tuning
+the exact position of an element, or for treating one spec as a template and
+producing many maps by only swapping the input map name(s).
+
+<p>
+When editing by hand, most settings are stored under the parameter name of the
+underlying display command, so you can look up their meaning in that command's
+manual. A vector layer uses the <i>d.vect</i> parameters (<tt>map</tt>,
+<tt>type</tt>, <tt>color</tt>, <tt>width</tt>, ...), a raster legend the
+<i>d.legend</i> parameters (<tt>raster</tt>, <tt>at</tt>, <tt>digits</tt>,
+<tt>flags</tt>, ...), a scale bar the <i>d.barscale</i> parameters, and so on.
+The longer GUI option names (e.g. <tt>legend_raster_digits</tt>) are also
+accepted as aliases and are converted to the canonical parameter name on the
+next write.
+
+<p>
+The exception is font size: each text element stores a <tt>font_scale</tt> (and
+the raster legend a <tt>title_scale</tt>) that is a <i>ratio</i> of the template
+base font size (see <a href="file:///usr/local/grassmaster/grass86/docs/html/#fonts">Fonts</a>). Template-level settings live in
+a <tt>settings</tt> block at the top of the spec (see <a
+href="#template-settings">Template settings</a>); a spec with no settings is
+written as a bare JSON array of layers.
+
+<p>
+A small spec file looks like this:
+
+<div class="code">
+  <pre>
+{
+  "settings": {
+    "fontsize": 12,
+    "dpi": 300,
+    "margin": 10
+  },
+  "layers": [
+    {
+      "kind": "raster",
+      "map": "elevation",
+      "opacity": 1.0
+    },
+    {
+      "kind": "legend_raster",
+      "raster": "elevation",
+      "title": "Elevation",
+      "at": [5, 50, 5, 8]
+    }
+  ]
+}
+</pre>
+</div>
+
+<h3><a name="layer-types">Layer types</a></h3>
+
+The <b>type</b> option selects what a layer is:
+
+<ul>
+  <li><i>solid</i>: a full-canvas color fill, used as a background or, at a low
+  opacity, as a tint over the layers below.</li>
+  <li><i>raster</i>: a raster map.</li>
+  <li><i>vector</i>: a vector map (areas, lines or points).</li>
+  <li><i>labels</i>: text labels from a vector attribute column.</li>
+  <li><i>legend_raster</i>, <i>legend_vector</i>: a legend for a raster or
+  vector map.</li>
+  <li><i>barscale</i>: a scale bar.</li>
+  <li><i>grid</i>: a coordinate grid.</li>
+  <li><i>image</i>: an external image (e.g. a logo or inset) placed in a
+  box.</li>
+</ul>
+
+<h3><a name="operations">Operations</a></h3>
+
+The <b>operation</b> option selects what a run does. Operations that target an
+existing layer use the <b>position</b> option (a 1-based index; <tt>0</tt> = the
+last layer). See <a href="file:///usr/local/grassmaster/grass86/docs/html/#opacity-and-layer-order">Opacity and layer order</a>.
+
+<ul>
+  <li><b>add</b> (default): append a new layer, or insert it at <b>position</b>.
+  Requires <b>type</b>.</li>
+  <li><b>replace</b>: replace the whole layer at <b>position</b> with a newly
+  built one. Requires <b>type</b> and its options.</li>
+  <li><b>update</b>: change one or more options of the existing layer at
+  <b>position</b>, keeping the rest of the layer intact. Only the options you
+  pass are altered, but note that the layer's type cannot be changed (use
+  <b>replace</b> for that).</li>
+  <li><b>delete</b>: remove the layer at <b>position</b>.</li>
+  <li><b>list</b>: print the template settings and the layers, bottom to top,
+  with their positions.</li>
+  <li><b>settings</b>: store the template settings in the spec (see <a
+  href="#template-settings">Template settings</a>).</li>
+  <li><b>render</b>: draw the spec to the <b>output</b> PNG (see <a
+  href="#figure-size-and-resolution">Figure size and resolution</a>).</li>
+</ul>
+
+<h3><a name="opacity-and-layer-order">OPACITY AND LAYER ORDER</a></h3>
+
+The <b>opacity</b> option controls the level of transparancy of each layer.
+Layers are drawn bottom to top in the order they appear in the spec file.
+<tt>operation=list</tt> prints that order with 1-based indices, which the
+<b>position</b> option then uses to insert, replace or delete a layer (position
+<tt>0</tt> means the end/top). See the <i>operation</i> and <i>position</i>
+parameters for details.
+
+<h3><a name="margin-around-the-map">MARGIN AROUND THE MAP</a></h3>
+
+At render time the <b>margin</b> option adds a border of the given number of
+pixels around the map. The margin is part of the <i>mapping area</i>: a
+<i>solid</i> background layer fills the whole mapping area (map and margin), and
+the <tt>at</tt> percentages are measured against it (see below).
+
+<h3><a name="placing-elements-outside-the-map">PLACING ELEMENTS OUTSIDE THE MAP</a></h3>
+
+The <tt>at</tt> placement of the raster legend, vector legend and image layers
+is given in percent of the <b>mapping area</b> (<tt>0</tt>–<tt>100</tt> spans
+the map plus any margin). The origin is bottom-left. This means that values
+below <tt>0</tt> or above <tt>100</tt> place the element <i>outside</i> the
+mapping area: to the left or below for values <tt>&lt; 0</tt>, to the right or
+above for values <tt>&gt; 100</tt>. The output image is then automatically
+enlarged on that side to make room.
+
+<p>
+Note that the requested output size (<b>width</b>, or <b>figure_width</b> /
+<b>figure_height</b>) always refers to the <i>whole</i> image, including
+anything placed outside. See <a href="file:///usr/local/grassmaster/grass86/docs/html/#figure-size-and-resolution">Figure size
+and resolution</a> for more details.
+
+<p>
+The whole output image (the outer canvas, including the area around outside
+elements) is transparent by default. Give it a colour with the <b>background</b>
+option to fill it; unlike the <i>solid</i> layer, this covers the entire image,
+not just the mapping area.
+
+<h3><a name="figure-size-and-resolution">FIGURE SIZE AND RESOLUTION</a></h3>
+
+The output has two mutually exclusive sizing modes. In both, the size you give
+refers to the <b>final image</b>, including any legends or images placed outside
+the mapping area.
+
+<ul>
+  <li><b>Pixel mode</b> (<b>width</b>, default 1200 px): total output width in
+  pixels.</li> <li><b>Physical mode</b> (<b>figure_width</b> and/or
+  <b>figure_height</b> in cm, at <b>dpi</b>). Either dimension may be omitted.
+  When both are given the more restrictive one wins.</li>
+</ul>
+
+<h3><a name="fonts">FONTS</a></h3>
+
+Typography is driven by a single <b>base font size</b> (the <b>fontsize</b>
+option, in points; default 12). Individual text element can be adjusted by
+providing a <i>ratio</i> of that base, so you set the overall size once and the
+parts stay in proportion:
+
+<table border="1">
+  <tr>
+    <th>Element</th>
+    <th>Ratio option</th>
+    <th>Default</th>
+  </tr>
+  <tr>
+    <td>Labels</td>
+    <td><b>label_font_scale</b></td>
+    <td>1</td>
+  </tr>
+  <tr>
+    <td>Raster-legend labels</td>
+    <td><b>legend_raster_font_scale</b></td>
+    <td>1</td>
+  </tr>
+  <tr>
+    <td>Raster-legend title</td>
+    <td><b>legend_raster_title_scale</b></td>
+    <td>1</td>
+  </tr>
+  <tr>
+    <td>Vector legend</td>
+    <td><b>legend_vector_font_scale</b></td>
+    <td>1</td>
+  </tr>
+  <tr>
+    <td>Barscale</td>
+    <td><b>barscale_font_scale</b></td>
+    <td>1</td>
+  </tr>
+  <tr>
+    <td>Grid</td>
+    <td><b>grid_font_scale</b></td>
+    <td>0.5</td>
+  </tr>
+</table>
+
+<p>
+The size of a text element is the <b>base font size × its ratio</b>. So with
+<tt>fontsize=12</tt>, grid labels (ratio 0.5) are 6 pt and legend labels (ratio
+1) are 12 pt. The point sizes are rendered at the output resolution
+(<b>dpi</b>), so one spec gives the same-looking typography whether you render
+it small for the web or large for print. Note that point sizes are close to, but
+not exactly the same as the typographic points used in a word processor.
+
+<p>
+Line widths and symbol sizes (vector <b>line_width</b> and point <b>size</b>,
+the grid line width, and the vector-legend symbol size) are also given in
+<b>points</b>, so they keep the same physical thickness at any <b>dpi</b>. At
+the default screen dpi one point is one pixel, so <tt>line_width=1</tt> is a
+hairline on screen.
+
+<p>
+Note: for a <i>categorical</i> raster the <tt>d.legend</tt> module fits the
+class labels to the legend box and may override the requested font size.
+
+<h3><a name="template-settings">TEMPLATE SETTINGS</a></h3>
+
+The style/layout options <b>font</b>, <b>fontsize</b>, <b>dpi</b>, <b>margin</b>
+and <b>background</b> are stored in the <tt>settings</tt> block of the spec
+file, so a spec works as a reusable template.
+
+<p>
+You can define the settings in the spec file using <b>operation=settings</b>.
+This will add or update the options you pass. This means you can tweak one (e.g.
+<tt>operation=settings margin=25</tt>) without restating the rest. Run it
+whenever you like, including together with <b>new_spec</b> to start a template:
+
+<div class="code">
+  <pre>
+m.printmap new_spec=NC.json operation=settings fontsize=12 dpi=300 margin=10
+</pre>
+</div>
+
+<p>
+At <b>render</b> time, passing one of these options <i>overrides</i> the stored
+value for that one render only, without changing the spec. Everything else (the
+<b>output</b> file name and the sizing options <b>width</b> /
+<b>figure_width</b> / <b>figure_height</b>) is always per-render.
+<tt>operation=list</tt> prints the current settings.
+
+<h2><a name="workspace-import">WORKSPACE IMPORT</a></h2>
+
+An existing GRASS GUI map composition can be turned into a spec file with <i><a
+href="m.printmap.gxw.md">m.printmap.gxw</a></i>, which converts a workspace
+(<tt>.gxw</tt>) into the spec file format used by this module. You can then
+adjust the layers and render them.
+
+<h2><a name="notes">NOTES</a></h2>
+
+<i>m.printmap</i> requires the Python <a
+href="https://python-pillow.org/">Pillow</a> library.
+
+<p>
+<i>m.printmap</i> draws whatever the <b>current region and mask</b> are, so set
+those with <i>g.region</i> and <i>r.mask</i> before rendering.
+
+<p>
+This module is specifically convenient to compose a map using the <b>GUI</b>:
+you fill in each layer's options in its tab, without having to remember
+parameter names. The examples are for the commmand line, but it works the same
+way from the GUI. Build the spec one layer at a time, then later replace
+individual layers (Example 2) to reuse a layout for a new map. Use whichever
+fits you.
+
+<h2><a name="example">EXAMPLE</a></h2>
+
+The examples use data from the North Carolina dataset, which you can download
+from <a href="https://grass.osgeo.org/download/data/">here</a>. Alternatively,
+in GRASS you can download it using the <i>Download sample project</i> button in
+the <i>Data panel</i>.
+
+<h3><a name="example-1">Example 1</a></h3>
+
+Set the region and and build a spec file with four layers, then render it:
+
+<div class="code">
+  <pre>
+# region
+g.region raster=elev_state_500m
+</pre>
+</div>
+
+<p>
+Initiate the spec file, storing a base font size of 11 points in the template
+(every text element sizes itself relative to it), and add a lightgrey solid
+background layer.
+
+<div class="code">
+  <pre>
+m.printmap new_spec=NC01.json operation=settings fontsize=11
+m.printmap spec=NC01.json type=solid solid_color="#ececec"
+</pre>
+</div>
+
+<p>
+Add the other layers.
+
+<div class="code">
+  <pre>
+# Add elevation layer
+m.printmap spec=NC01.json type=raster raster=elev_state_500m
+
+# Add layer with county boundaries
+m.printmap spec=NC01.json type=vector vector=boundary_county \
+    color="49:49:49" line_width=0.1 opacity=0.8
+
+# Add legend (labels use the base font size; ratio defaults to 1)
+m.printmap spec=NC01.json type=legend_raster \
+    legend_raster_map=elev_state_500m legend_raster_at=12,16,6,40 \
+    legend_raster_flags=s,t
+
+# Add logo
+m.printmap spec=NC01.json type=image image=grass-logo.png \
+    image_at="5,30,90,99"
+</pre>
+</div>
+
+<p>
+Print the list of layers that will make up the map.
+
+<div class="code">
+  <pre>
+m.printmap spec=NC01.json operation=list
+</pre>
+</div>
+
+<p>
+Render the map to png.
+
+<div class="code">
+  <pre>
+m.printmap spec=NC01.json operation=render \
+    output=m_printmap_01.png width=650 --overwrite
+</pre>
+</div>
+
+<p>
+The resulting map:
+
+<p>
+![](m_printmap_01.png)
+
+<h3><a name="example-2">Example 2</a></h3>
+
+Now, let's replace the elevation layer (which as we have seen above, is the 2nd
+layer) and the legend (4th position) with the layer with average precipitation
+in January 2000. This is part of the <a
+href="https://grass.osgeo.org/download/data/">NC Climate data set</a>.
+
+<div class="code">
+  <pre>
+# Replace the elevantion with rainfall layer
+m.printmap spec=NC01.json type=raster \
+           raster=2000_01_precip@climate_2000_2012 \
+           operation=replace position=2
+
+# Replace legend
+m.printmap spec=NC01.json type=legend_raster \
+    legend_raster_map=2000_01_precip@climate_2000_2012 \
+    legend_raster_at=12,16,6,40 \
+    legend_raster_flags=s,t operation=replace position=4
+
+# Render the map to PNG
+m.printmap spec=NC01.json operation=render \
+    output=m_printmap_02.png width=600
+</pre>
+</div>
+
+<p>
+The resulting map:
+
+<p>
+![](m_printmap_02.png)
+
+<h3><a name="example-3">Example 3</a></h3>
+
+Repeate example 1, but place the legend right of the mapping area and move the
+logo to the left. We furthermore store a margin of 10 pixels in the template
+(alongside the base font size), so it no longer has to be given at render time.
+We'll create a new spec file <i>NC03.json</i> for this.
+
+<div class="code">
+  <pre>
+# region
+g.region raster=elev_state_500m
+
+# Store base font size and margin in the template, then add layers
+m.printmap new_spec=NC03.json operation=settings fontsize=11 \
+    margin=10 background="255:255:255"
+m.printmap spec=NC03.json type=solid solid_color="#ececec"
+m.printmap spec=NC03.json type=raster raster=elev_state_500m
+m.printmap spec=NC03.json type=vector vector=boundary_county \
+    color="49:49:49" line_width=1 opacity=0.8
+
+# Add legend
+m.printmap spec=NC03.json type=legend_raster \
+    legend_raster_map=elev_state_500m legend_raster_at=5,95,101,104 \
+    legend_raster_flags=s,t
+
+# Add logo
+m.printmap spec=NC03.json type=image image=grass-logo.png \
+    image_at="5,30,1,10"
+</pre>
+</div>
+
+<p>
+Render the map to png (the stored margin is applied automatically).
+
+<div class="code">
+  <pre>
+m.printmap spec=NC03.json operation=render \
+    output=m_printmap_03.png width=600
+</pre>
+</div>
+
+<p>
+The resulting map is shown below.
+
+<p>
+![](m_printmap_03.png)
+
+<h3><a name="example-4">Example 4</a></h3>
+
+Repeate the previous example, but place both the logo and the legend below the
+mapping area, and set a general background to dark(er) grey.
+
+<div class="code">
+  <pre>
+# region
+g.region raster=elev_state_500m
+
+# Store base font size, margin and background in the template, then add layers
+m.printmap new_spec=NC04.json operation=settings \
+    fontsize=11 margin=10 background="#dfdfdf"
+m.printmap spec=NC04.json type=solid solid_color="#ececec"
+m.printmap spec=NC04.json type=raster raster=elev_state_500m
+m.printmap spec=NC04.json type=vector vector=boundary_county \
+    color="49:49:49" line_width=1 opacity=0.8
+
+# Add legend
+m.printmap spec=NC04.json type=legend_raster \
+    legend_raster_map=elev_state_500m legend_raster_at=-7,-2,25,95 \
+    legend_raster_flags=s,t
+
+# Add logo
+m.printmap spec=NC04.json type=image image=grass-logo-horizontal.png \
+    image_at="-14,-3,2,20"
+</pre>
+</div>
+
+<p>
+Render the map to png (margin and background come from the template).
+
+<div class="code">
+  <pre>
+m.printmap spec=NC04.json operation=render \
+    output=m_printmap_04.png width=600
+</pre>
+</div>
+
+<p>
+The resulting map:
+
+<p>
+![](m_printmap_04.png)
+
+<h3><a name="example-5">Example 5</a></h3>
+
+Let's know combine two raster layers, the elevation map and a relief map based
+on that map, by changing the opacity of one of them. We'll update the spec file
+created earlier.
+
+<div class="code">
+  <pre>
+# Create relief map
+r.relief input=elev_state_500m@PERMANENT output=shadedrelief_state_500m zscale=10
+
+# As a reminder, get the order of the layers of the spec file 4
+m.printmap spec=NC04.json operation=list
+
+# Add the relief layer just before the elevation layer. I.e., the elevation layer
+# will be drawn on top of the shaded relief layer.
+m.printmap spec=NC04.json type=raster raster=shadedrelief_state_500m \
+    operation=add position=2
+
+# Update the elevation layer spec by setting/changing its opacity to 0.5
+m.printmap spec=NC04.json position=3 operation=update opacity=0.5
+
+# Print map
+m.printmap spec=NC04.json operation=render \
+    output=m_printmap_05.png width=600 --overwrite
+</pre>
+</div>
+
+<p>
+The resulting map:
+
+<p>
+![](m_printmap_05.png)
+
+<h2><a name="see-also">SEE ALSO</a></h2>
+
+<i><a href="file:///usr/local/grassmaster/grass86/docs/html/m.printmap.gxw.md">m.printmap.gxw</a>, <a
+href="m.printws.md">m.printws</a>, <a href="file:///usr/local/grassmaster/grass86/docs/html/d.rast.md">d.rast</a>, <a
+href="d.vect.md">d.vect</a>, <a href="file:///usr/local/grassmaster/grass86/docs/html/d.legend.md">d.legend</a>, <a
+href="d.legend.vect.md">d.legend.vect</a>, <a
+href="d.out.file.md">d.out.file</a></i>
+
+<h2><a name="author">AUTHOR</a></h2>
+
+<a href="https://ecodiv.earth">Paulo van Breugel</a>, <a
+href="https://has.nl">HAS green academy</a>, <a
+href="https://www.has.nl/en/research/professorships/innovative-bio-monitoring-professorship/">Innovative
+Biomonitoring research group</a>, <a
+href="https://www.has.nl/en/research/professorships/climate-robust-landscapes-professorship/">Climate-robust
+Landscapes research group</a>
+<h2>SOURCE CODE</h2>
+<p>
+  Available at:
+  <a href="">m.printmap source code</a>
+  (<a href="">history</a>)
+</p>
+<p>
+  Accessed: Thursday Aug 06 15:41:54 2026
+</p>
+<hr class="header">
+<p>
+<a href="file:///usr/local/grassmaster/grass86/docs/html/index.html">Main index</a> |
+<a href="file:///usr/local/grassmaster/grass86/docs/html/miscellaneous.html">Miscellaneous index</a> |
+<a href="file:///usr/local/grassmaster/grass86/docs/html/topics.html">Topics index</a> |
+<a href="file:///usr/local/grassmaster/grass86/docs/html/keywords.html">Keywords index</a> |
+<a href="file:///usr/local/grassmaster/grass86/docs/html/graphical_index.html">Graphical index</a> |
+<a href="file:///usr/local/grassmaster/grass86/docs/html/full_index.html">Full index</a>
+</p>
+<p>
+&copy; 2003-2026
+<a href="https://grass.osgeo.org">GRASS Development Team</a>,
+GRASS 8.6.0dev Reference Manual
+</p>
+
+</div>
+</body>
+</html>

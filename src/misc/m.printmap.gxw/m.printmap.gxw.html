@@ -2,10 +2,10 @@
 
 <i>m.printmap.gxw</i> converts a GRASS workspace file (<b>input</b>, a
 <tt>.gxw</tt> saved from the GUI) into an <i><a
-href="m.printmap.md">m.printmap</a></i> spec file (<b>output</b>). Each display
-command in the workspace is translated into the matching <i>m.printmap</i> layer
-type, so an existing GUI map composition can be turned into a reusable, editable
-spec and rendered with <i>m.printmap</i>.
+href="m.printmap.md">m.printmap</a></i> spec file (<b>output</b>, a JSON file).
+Each display command in the workspace is translated into the matching
+<i>m.printmap</i> layer type, so an existing GUI map composition can be turned
+into a reusable, editable spec and rendered with <i>m.printmap</i>.
 
 <h2>NOTES</h2>
 
@@ -31,27 +31,27 @@ the current region. The equivalent <i>g.region</i> command is printed so the
 view can be reproduced before rendering.
 
 <p>
-This addon was heavily inspired by <i><a href="m.printws.md">m.printws</a></i>.
-That addon opens a workspace file and creates a map sheet according to its
-visible contents. This addon, together with <i><a
-href="m.printmap.md">m.printmap</a></i>, offers a complementary approach:
-instead of printing the workspace directly, it turns the workspace into an
-editable spec file. You can then adjust the layers — order, opacity, or add new
-ones — and render the result with <i>m.printmap</i>.
+This addon was heavily inspired by and borrows from <i><a
+href="m.printws.md">m.printws</a></i>. That addon opens a workspace file and
+creates a map sheet according to its visible contents. <i>m.printmap.gxw</i>,
+together with <i><a href="m.printmap.md">m.printmap</a></i>, offers a
+complementary approach: instead of printing the workspace directly, it turns the
+workspace into an editable spec file. You can then adjust the layers (order,
+opacity, or add new ones) and render the result with <i>m.printmap</i>.
 
 <h2>EXAMPLE</h2>
 
 <div class="code">
   <pre>
-m.printmap.gxw input=rotterdam.gxw output=rotterdam.spec
+m.printmap.gxw input=rotterdam.gxw output=rotterdam.json
 
 # set the region as printed by the command above, then:
 
 # list the layers
-m.printmap spec=rotterdam.spec operation=list
+m.printmap spec=rotterdam.json operation=list
 
 # Render the map
-m.printmap spec=rotterdam.spec operation=render output=rotterdam.png
+m.printmap spec=rotterdam.json operation=render output=rotterdam.png
 </pre>
 </div>
 

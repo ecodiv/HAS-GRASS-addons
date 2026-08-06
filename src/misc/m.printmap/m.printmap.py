@@ -6,9 +6,9 @@
 # AUTHOR(S): Paulo van Breugel
 #
 # PURPOSE:   Composite GRASS raster, vector, legend and label layers into a
-#            single PNG with per-layer opacity. Layers are stored in a plain
-#            text spec file (a Python list-of-dicts literal). The module both
-#            builds the spec file one layer at a time and renders it.
+#            single PNG with per-layer opacity. Layers are stored in a JSON
+#            spec file. The module both builds the spec file one layer at a
+#            time and renders it.
 #
 # SPDX-FileCopyrightText: 2026 Paulo van Breugel
 # SPDX-FileCopyrightText: Other GRASS authors
@@ -44,9 +44,9 @@
 # % key: operation
 # % type: string
 # % required: yes
-# % options: add,replace,render,list,delete
+# % options: add,replace,update,render,list,delete,settings
 # % answer: add
-# % description: Action to perform on the spec file
+# % description: Action to perform on the spec file (update = change options of an existing layer; settings = set template settings)
 # % guisection: Main
 # %end
 
@@ -121,7 +121,7 @@
 # % key: dpi
 # % type: integer
 # % required: no
-# % answer: 300
+# % answer: 96
 # % description: Resolution in dpi: sizes point-based fonts and line widths (both modes) and the figure in physical mode
 # % guisection: Render
 # %end
@@ -650,7 +650,7 @@
 # % exclusive: width,figure_height
 # %end
 
-import ast
+import json
 import os
 import sys
 import tempfile
@@ -754,6 +754,10 @@ _FLOAT_LIST_KEYS = {"at"}
 # Spec keys holding a d.* flag string.
 _FLAG_KEYS = {"flags"}
 
+# All GUI option names that belong to some layer type (used by operation=update
+# to tell "wrong option for this layer kind" from an unrelated control option).
+_LAYER_OPT_NAMES = {name for opts in _TYPE_OPTIONS.values() for name in opts}
+
 # Template-level style/layout settings. They live in the spec's 'settings'
 # block (so a spec acts as a reusable template) and each is overridable at
 # render time via the same-named option. 'fontsize' is the base point size that
@@ -784,9 +788,9 @@ def _provided_options():
 # Spec file I/O
 # ----------------------------------------------------------------------------
 def read_spec(path):
-    """Read the spec file into (layers, settings). The spec is either a bare
-    list of layers or a dict {'settings': {...}, 'layers': [...]}; both are
-    accepted. Returns ([], {}) if the file is absent or empty."""
+    """Read the JSON spec file into (layers, settings). The spec is either a
+    bare list of layers or an object {"settings": {...}, "layers": [...]}; both
+    are accepted. Returns ([], {}) if the file is absent or empty."""
     if not os.path.exists(path):
         return [], {}
     with open(path, encoding="utf-8") as handle:
@@ -794,17 +798,17 @@ def read_spec(path):
     if not text:
         return [], {}
     try:
-        data = ast.literal_eval(text)
-    except (ValueError, SyntaxError) as error:
-        gs.fatal(f"Could not parse spec file <{path}>: {error}")
+        data = json.loads(text)
+    except json.JSONDecodeError as error:
+        gs.fatal(f"Could not parse spec file <{path}> as JSON: {error}")
     if isinstance(data, dict):
         settings = dict(data.get("settings", {}))
         layers = data.get("layers", [])
     elif isinstance(data, list):
         settings, layers = {}, data
     else:
-        gs.fatal(f"Spec file <{path}> must be a list of layers or a settings "
-                 "dict.")
+        gs.fatal(f"Spec file <{path}> must be a JSON array of layers or an "
+                 "object with 'settings' and 'layers'.")
     if not isinstance(layers, list):
         gs.fatal(f"Spec file <{path}> has a non-list 'layers' entry.")
     return [_normalize_layer(layer) for layer in layers], settings
@@ -823,43 +827,58 @@ def _normalize_layer(layer):
     return layer
 
 
+def _spec_to_json(data):
+    """Pretty-print the spec as JSON, but keep short all-number arrays (like the
+    'at' placement) on a single line instead of one element per line."""
+    inline = {}
+
+    def prep(obj):
+        if isinstance(obj, dict):
+            return {k: prep(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            if obj and all(isinstance(x, (int, float)) and not isinstance(x, bool)
+                           for x in obj):
+                token = f"@@INLINE{len(inline)}@@"
+                inline[token] = json.dumps(obj)
+                return token
+            return [prep(x) for x in obj]
+        return obj
+
+    text = json.dumps(prep(data), indent=2)
+    for token, rep in inline.items():
+        text = text.replace(json.dumps(token), rep)
+    return text
+
+
 def write_spec(path, layers, settings=None):
-    """Write the spec back as a readable Python literal. With template settings
-    present it is a dict {'settings': ..., 'layers': [...]}; otherwise a bare
-    list of layers (keeping simple specs uncluttered)."""
-    if settings:
-        layer_lines = "".join("        " + repr(layer) + ",\n"
-                              for layer in layers)
-        text = (
-            "{\n"
-            "    'settings': " + repr(settings) + ",\n"
-            "    'layers': [\n" + layer_lines + "    ],\n"
-            "}\n"
-        )
-    else:
-        body = ",\n".join("    " + repr(layer) for layer in layers)
-        text = "[\n" + body + ",\n]\n" if layers else "[]\n"
+    """Write the spec back as pretty-printed JSON. With template settings
+    present it is an object {"settings": ..., "layers": [...]}; otherwise a bare
+    array of layers (keeping simple specs uncluttered)."""
+    data = {"settings": settings, "layers": layers} if settings else layers
     with open(path, "w", encoding="utf-8") as handle:
-        handle.write(text)
+        handle.write(_spec_to_json(data) + "\n")
 
 
-def capture_settings(settings, options, provided, operation):
-    """Fold any explicitly-provided template settings into 'settings' (last
-    value wins). On 'add', warn when a setting is already present so the user
-    knows the template is being changed; 'replace' changes them silently."""
+def capture_settings(settings, options, provided):
+    """Update 'settings' with the explicitly-provided template settings (last
+    value wins); options left at their default are untouched. Returns the keys
+    that were updated."""
+    updated = []
     for key in _SETTING_KEYS:
-        if key not in provided:
-            continue
-        new = _coerce_setting(key, options[key])
-        if operation == "add" and key in settings:
-            if settings[key] == new:
-                gs.warning(f"Template setting '{key}' is already {new!r} in the "
-                           "spec; re-setting it.")
-            else:
-                gs.warning(f"Template setting '{key}' was {settings[key]!r} and "
-                           f"is now {new!r}. Use operation=replace to change "
-                           "settings without this warning.")
-        settings[key] = new
+        if key in provided:
+            settings[key] = _coerce_setting(key, options[key])
+            updated.append(key)
+    return updated
+
+
+def _coerce_layer_value(spec_key, value):
+    """Coerce a raw option string into the value stored under a spec key
+    (float list for 'at', cleaned flag string for 'flags', else the string)."""
+    if spec_key in _FLOAT_LIST_KEYS:
+        return [float(v) for v in value.split(",")]
+    if spec_key in _FLAG_KEYS:
+        return value.replace(",", "")
+    return value
 
 
 def build_layer(options):
@@ -871,14 +890,8 @@ def build_layer(options):
     layer = {"kind": kind}
     for opt_name, spec_key in _TYPE_OPTIONS[kind].items():
         value = options.get(opt_name, "")
-        if value == "":
-            continue
-        if spec_key in _FLOAT_LIST_KEYS:
-            layer[spec_key] = [float(v) for v in value.split(",")]
-        elif spec_key in _FLAG_KEYS:
-            layer[spec_key] = value.replace(",", "")
-        else:
-            layer[spec_key] = value
+        if value != "":
+            layer[spec_key] = _coerce_layer_value(spec_key, value)
 
     # opacity always carries a meaningful default and applies to every type.
     layer["opacity"] = float(options["opacity"])
@@ -1437,16 +1450,8 @@ def _target_index(position, count):
     return index
 
 
-def op_add(path, layers, settings, options, provided):
-    """Add a layer: append (position 0), or insert at 'position'. With no
-    'type' but template settings given, only the settings are updated."""
-    if not options["type"]:
-        if not (set(_SETTING_KEYS) & provided):
-            gs.fatal("operation=add requires the 'type' option (or template "
-                     "settings to set).")
-        write_spec(path, layers, settings)
-        gs.message(f"Updated template settings in <{path}>.")
-        return
+def op_add(path, layers, settings, options):
+    """Add a layer: append (position 0), or insert at 'position'."""
     layer = build_layer(options)
     position = _parse_position(options)
     if position <= 0:
@@ -1458,16 +1463,8 @@ def op_add(path, layers, settings, options, provided):
     write_spec(path, layers, settings)
 
 
-def op_replace(path, layers, settings, options, provided):
-    """Replace the layer at 'position' (0 = last), or, with no 'type', just
-    update the template settings."""
-    if not options["type"]:
-        if not (set(_SETTING_KEYS) & provided):
-            gs.fatal("operation=replace requires the 'type' option (or template "
-                     "settings to change).")
-        write_spec(path, layers, settings)
-        gs.message(f"Updated template settings in <{path}>.")
-        return
+def op_replace(path, layers, settings, options):
+    """Replace the layer at 'position' (0 = last) with a new one."""
     index = _target_index(_parse_position(options), len(layers))
     layers[index] = build_layer(options)
     write_spec(path, layers, settings)
@@ -1480,6 +1477,51 @@ def op_delete(path, layers, settings, options):
     removed = layers.pop(index)
     write_spec(path, layers, settings)
     gs.message(f"Deleted layer {index + 1}: {summarize(removed)}")
+
+
+def op_update(path, layers, settings, options, provided):
+    """Change one or more options of the existing layer at 'position' (0 = last)
+    without rebuilding it: only the options you explicitly pass are merged in,
+    the rest of the layer is kept. The layer's type cannot be changed here (use
+    'replace' for that)."""
+    index = _target_index(_parse_position(options), len(layers))
+    layer = layers[index]
+    kind = layer.get("kind")
+    type_opts = _TYPE_OPTIONS.get(kind, {})
+    applied, wrong_kind = [], []
+    for opt_name in provided:
+        if opt_name == "opacity":
+            layer["opacity"] = float(options["opacity"])
+            applied.append("opacity")
+        elif opt_name in type_opts:
+            spec_key = type_opts[opt_name]
+            layer[spec_key] = _coerce_layer_value(spec_key, options[opt_name])
+            applied.append(opt_name)
+        elif opt_name in _LAYER_OPT_NAMES:
+            wrong_kind.append(opt_name)  # a layer option, but not for this kind
+    if wrong_kind:
+        gs.warning("Option(s) %s do not apply to a '%s' layer; ignored."
+                   % (", ".join(sorted(wrong_kind)), kind))
+    if not applied:
+        gs.fatal(f"operation=update needs at least one option that applies to "
+                 f"the '{kind}' layer at position {index + 1} (e.g. opacity).")
+    write_spec(path, layers, settings)
+    gs.message("Updated %s on layer %d (%s) in <%s>."
+               % (", ".join(applied), index + 1, kind, path))
+
+
+def op_settings(path, layers, settings, options, provided):
+    """Set the template settings (font, fontsize, dpi, margin, background) in
+    the spec. Only the options you pass are changed; the rest keep their stored
+    value. This is the only operation that writes settings, so building layers
+    with 'add' never touches them."""
+    updated = capture_settings(settings, options, provided)
+    if not updated:
+        gs.fatal("operation=settings needs at least one of: %s."
+                 % ", ".join(_SETTING_KEYS))
+    write_spec(path, layers, settings)
+    gs.message("Set template setting(s) %s in <%s>."
+               % (", ".join(updated), path))
 
 
 def _resolve_setting(key, options, provided, settings, cast):
@@ -1533,20 +1575,24 @@ def main():
         _op_render(options, provided, layers, settings)
         return 0
 
-    render_only = [o for o in ("output", "width", "figure_width",
-                               "figure_height") if o in provided]
-    if render_only:
-        gs.warning("Option(s) %s only apply to operation=render; ignored."
-                   % ", ".join(render_only))
+    if operation == "settings":
+        op_settings(path, layers, settings, options, provided)
+        return 0
 
-    # Fold explicitly-provided template settings into the spec (sticky).
-    if operation in ("add", "replace"):
-        capture_settings(settings, options, provided, operation)
+    # Template settings are only written by operation=settings; passing them to
+    # a layer operation does nothing, so say so (they are common GUI fields).
+    stray = [o for o in _SETTING_KEYS if o in provided]
+    if stray:
+        gs.warning("Option(s) %s only apply to operation=settings or render; "
+                   "ignored here. Use operation=settings to store them."
+                   % ", ".join(stray))
 
     if operation == "add":
-        op_add(path, layers, settings, options, provided)
+        op_add(path, layers, settings, options)
     elif operation == "replace":
-        op_replace(path, layers, settings, options, provided)
+        op_replace(path, layers, settings, options)
+    elif operation == "update":
+        op_update(path, layers, settings, options, provided)
     elif operation == "list":
         op_list(path, layers, settings)
     elif operation == "delete":

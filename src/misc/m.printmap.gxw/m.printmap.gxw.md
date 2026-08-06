@@ -1,10 +1,10 @@
 ## DESCRIPTION
 
 *m.printmap.gxw* converts a GRASS workspace file (**input**, a `.gxw` saved from
-the GUI) into an *[m.printmap](m.printmap.md)* spec file (**output**). Each
-display command in the workspace is translated into the matching *m.printmap*
-layer type, so an existing GUI map composition can be turned into a reusable,
-editable spec and rendered with *m.printmap*.
+the GUI) into an *[m.printmap](m.printmap.md)* spec file (**output**, a JSON
+file). Each display command in the workspace is translated into the matching
+*m.printmap* layer type, so an existing GUI map composition can be turned into a
+reusable, editable spec and rendered with *m.printmap*.
 
 ## NOTES
 
@@ -35,15 +35,15 @@ render the result with *m.printmap*.
 ## EXAMPLE
 
 ```sh
-m.printmap.gxw input=rotterdam.gxw output=rotterdam.spec
+m.printmap.gxw input=rotterdam.gxw output=rotterdam.json
 
 # set the region as printed by the command above, then:
 
 # list the layers
-m.printmap spec=rotterdam.spec operation=list
+m.printmap spec=rotterdam.json operation=list
 
 # Render the map
-m.printmap spec=rotterdam.spec operation=render output=rotterdam.png
+m.printmap spec=rotterdam.json operation=render output=rotterdam.png
 ```
 
 ## SEE ALSO

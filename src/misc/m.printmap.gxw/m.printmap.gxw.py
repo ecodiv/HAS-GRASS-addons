@@ -31,6 +31,7 @@
 # % description: m.printmap spec file to create
 # %end
 
+import json
 import sys
 import xml.etree.ElementTree as ET
 from collections import Counter
@@ -119,24 +120,36 @@ def _apply_font_scales(layers, default_base=12.0):
     return {"fontsize": base}
 
 
+def _spec_to_json(data):
+    """Pretty-print the spec as JSON, but keep short all-number arrays (like the
+    'at' placement) on a single line instead of one element per line."""
+    inline = {}
+
+    def prep(obj):
+        if isinstance(obj, dict):
+            return {k: prep(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            if obj and all(isinstance(x, (int, float)) and not isinstance(x, bool)
+                           for x in obj):
+                token = f"@@INLINE{len(inline)}@@"
+                inline[token] = json.dumps(obj)
+                return token
+            return [prep(x) for x in obj]
+        return obj
+
+    text = json.dumps(prep(data), indent=2)
+    for token, rep in inline.items():
+        text = text.replace(json.dumps(token), rep)
+    return text
+
+
 def write_spec(path, layers, settings=None):
-    """Write the spec as a readable Python literal (matching m.printmap). With
-    template settings it is a dict {'settings': ..., 'layers': [...]}; without,
-    a bare list of layers."""
-    if settings:
-        layer_lines = "".join("        " + repr(layer) + ",\n"
-                              for layer in layers)
-        text = (
-            "{\n"
-            "    'settings': " + repr(settings) + ",\n"
-            "    'layers': [\n" + layer_lines + "    ],\n"
-            "}\n"
-        )
-    else:
-        body = ",\n".join("    " + repr(layer) for layer in layers)
-        text = "[\n" + body + ",\n]\n" if layers else "[]\n"
+    """Write the spec as pretty-printed JSON (matching m.printmap). With
+    template settings it is an object {"settings": ..., "layers": [...]};
+    without, a bare array of layers."""
+    data = {"settings": settings, "layers": layers} if settings else layers
     with open(path, "w", encoding="utf-8") as handle:
-        handle.write(text)
+        handle.write(_spec_to_json(data) + "\n")
 
 
 def _gxw_params(element):
