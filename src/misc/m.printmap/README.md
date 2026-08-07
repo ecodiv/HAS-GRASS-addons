@@ -294,7 +294,8 @@ settings.
 ## WORKSPACE IMPORT
 
 An existing GRASS GUI map composition can be turned into a spec file with
-*[m.printmap.gxw](m.printmap.gxw.md)*, which converts a workspace (`.gxw`) into
+*[m.printmap.gxw](https://github.com/ecodiv/HAS-GRASS-addons/tree/main/src/misc/m.printmap.gxw)*, 
+which converts a workspace (`.gxw`) into
 the spec file format used by this module. You can then adjust the layers and
 render them.
 
