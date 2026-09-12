@@ -396,6 +396,15 @@
 # % guisection: Raster legend
 # %end
 
+# %option
+# % key: legend_raster_range
+# % type: double
+# % required: no
+# % multiple: yes
+# % description: Use a subset of the map range for the legend (min,max)
+# % guisection: Raster legend
+# %end
+
 # %option G_OPT_CN
 # % key: legend_raster_border_color
 # % answer: none
@@ -706,6 +715,7 @@ _TYPE_OPTIONS = {
         "legend_raster_labelnum": "labelnum",
         "legend_raster_label_values": "label_values",
         "legend_raster_use": "use",
+        "legend_raster_range": "range",
         "legend_raster_border_color": "border_color",
         "legend_raster_bgcolor": "bgcolor",
     },
@@ -1220,6 +1230,7 @@ def render_layer(layer, outfile, layout):
             "use",
             "labelnum",
             "label_values",
+            "range",
             "digits",
             "border_color",
             "bgcolor",

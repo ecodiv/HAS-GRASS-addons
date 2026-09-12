@@ -184,7 +184,9 @@ Ticks belong to the continuous legend, so `legend_raster_flags=t` has no effect
 there; combine it with the smooth-gradient flag (`legend_raster_flags=st`) to get
 a gradient with ticks. For a floating-point (FCELL/DCELL) raster, `t` works on
 its own. Values given in **legend_raster_label_values** must lie within the
-raster's range, otherwise `d.legend` stops with an "out of range" error.
+raster's range, otherwise `d.legend` stops with an "out of range" error. Use
+**legend_raster_range** (`min,max`) to restrict the legend to a subset of the
+map's data range.
 
 ### TEMPLATE SETTINGS
 

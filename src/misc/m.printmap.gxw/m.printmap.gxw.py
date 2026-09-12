@@ -62,7 +62,7 @@ _GXW_TASKS = {
     "d.vect": ("vector", _GXW_VECTOR, None),
     "d.legend": ("legend_raster", _identity(
         "raster", "at", "fontsize", "digits", "use", "labelnum",
-        "label_values", "border_color", "bgcolor",
+        "label_values", "range", "border_color", "bgcolor",
     ), "flags"),
     "d.legend.vect": ("legend_vector", _identity(
         "map", "at", "fontsize", "title", "columns", "symbol_size", "font",
