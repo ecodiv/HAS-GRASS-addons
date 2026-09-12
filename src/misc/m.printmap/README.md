@@ -485,8 +485,8 @@ The resulting map:
 
 ### Example 5
 
-Let's know combine two raster layers, the elevation map and a relief map based
-on that map, by changing the opacity of one of them. We'll update the spec file
+Let's now combine two raster layers, the elevation map and a relief map based on
+that map, by changing the opacity of one of them. We'll update the spec file
 created earlier.
 
 ```sh

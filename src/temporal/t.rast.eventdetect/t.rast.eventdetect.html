@@ -1,0 +1,284 @@
+<h2>DESCRIPTION</h2>
+
+<p><em>t.rast.eventdetect</em> detects and counts relatively rapid changes
+("events") in a space-time raster dataset (strds) and characterizes the
+recovery after each event. It works <b>per pixel</b> on the raw, irregularly
+spaced observations, using the actual acquisition dates and keeping the cloud
+gaps (NULL values) in place. Missing observations are never filled: a
+comparison is simply made against the last <em>clear</em> observation. This
+makes the module suitable for gappy optical time series such as Sentinel-2
+vegetation-index composites.</p>
+
+<p>The method generalizes the grassland mowing-frequency approach of Kolecka
+et al. (2018). Mowing is one use case; the same logic applies to any abrupt
+disturbance and recovery (harvest, flood or hail defoliation, fire, drought
+die-back) and, with <b>direction=rise</b>, to rapid increases such as
+green-up.</p>
+
+<p>Do <b>not</b> feed a smoothed or harmonically fitted series (e.g. a HANTS
+climatology): such curves suppress exactly the short, sharp changes this module
+is meant to find. Use the raw composite strds and let the module handle the
+gaps.</p>
+
+<h2>HOW EVENTS ARE DETECTED</h2>
+
+<p>For every clear observation at acquisition date <em>AD</em>, the value is
+compared with the last clear observation (<em>AD-1</em>) and, when
+<b>lookback=2</b>, also with the second-to-last clear observation
+(<em>AD-2</em>). An event is flagged when the change in the requested
+<b>direction</b> exceeds <b>threshold</b>. The comparison against <em>AD-2</em>
+recovers events that would be missed when the immediately preceding date is
+cloudy.</p>
+
+<p>Comparisons that span more than <b>max_gap</b> days are ignored, so a change
+measured across a long cloudy period (which reflects seasonal development
+rather than an abrupt event) does not trigger a false detection.</p>
+
+<p><b>threshold_type</b> sets how <b>threshold</b> is read:</p>
+<ul>
+  <li><b>absolute</b> &mdash; in the value units of the data (default
+  <tt>0.2</tt>, suitable for NDVI).</li>
+  <li><b>relative</b> &mdash; a fraction of the pre-event level.</li>
+  <li><b>mad</b> &mdash; multiples of the per-pixel robust standard deviation
+  (1.4826 &times; MAD) computed over the analyzed year. The robust scale is
+  computed per year so that thresholds remain comparable between runs and are
+  not affected by how many years or how many cloudy scenes are present in the
+  archive. This option loads the year stack into memory, so keep the
+  computational region to a reasonable size.</li>
+</ul>
+
+<h3>Change magnitude</h3>
+
+<p>Detection is <em>triggered</em> by the drop from the last one or two clear
+observations. The reported <em>magnitude</em> of an event, however, is measured
+against the pre-event level defined by <b>baseline_window</b>: the maximum (for
+drops) or minimum (for rises) of the last <em>k</em> clear observations before
+the event, with <b>baseline_window=k</b>.</p>
+
+<p>With the default <b>baseline_window=1</b> this is simply the immediately
+preceding clear value, reproducing Kolecka et al. (2018). With a larger window
+the magnitude is measured from the recent plateau, which is more robust when the
+single preceding observation is noisy or already slightly depressed. For
+example, with values 0.80, 0.78, 0.72 (a hazy scene) and then a cut to 0.50,
+the magnitude measured against the preceding value is 0.22, while against the
+recent plateau (0.80) it is 0.30, the latter reflects the true size of the
+event. This same pre-event level is used as the recovery reference <em>R</em>
+in <b>baseline=observed</b> mode, so magnitude and recovery share a consistent
+baseline: <tt>magnitude = R - trough</tt>.</p>
+
+<h3>Avoiding double counting</h3>
+
+<p>Because the <em>AD-2</em> comparison reaches two observations back, a single
+event can be flagged twice: once at its own date and again one observation later
+(the value has not yet recovered, so the <em>AD-2</em> span is still a large
+change). Kolecka et al. (2018) excluded such "overlapping events indicated at
+the same date or at subsequent dates, prioritizing" the single-interval
+condition.</p>
+
+<p>This module reproduces that behavior with a day-based rule:
+<b>min_separation</b> (in days). Two detections closer than <b>min_separation</b>
+collapse into one, and the first (earlier) detection is kept, which corresponds
+to prioritizing the single-interval condition. The day-based form is
+cadence-independent: it stays correct when clouds stretch the real spacing, and
+it becomes a physically meaningful setting (the shortest plausible time between
+two genuine events). Choose a value shorter than the shortest real inter-event
+time; for grassland mowing, regrowth takes weeks, so the default
+(2 &times; <b>step</b>) safely removes the echo without merging genuine
+successive cuts.</p>
+
+<h2>RECOVERY</h2>
+
+<p>After each event the module tracks how far the signal returns toward a
+reference level. An event counts as <b>recovered</b> when the recovered fraction
+reaches <b>recovery_target</b> (default <tt>0.8</tt>).</p>
+
+<p>The reference depends on <b>baseline</b>:</p>
+<ul>
+  <li><b>observed</b> &mdash; recovery toward the pre-event level <em>R</em>
+  (see <em>Change magnitude</em> above). The recovered fraction is
+  <tt>(value - trough) / (R - trough)</tt>.</li>
+  <li><b>reference</b> &mdash; recovery toward the level expected for the time
+  of year, taken from a climatology strds (<b>reference</b>, a relative-time
+  strds keyed by day-of-year). Recovery is measured as the closing of the
+  anomaly (observed minus expected). The reference is used <b>only</b> for
+  recovery, never for detection.</li>
+</ul>
+
+<p>Each event resolves into exactly one of three outcomes, so that the counts
+partition cleanly (<tt>count = n_recovered + interrupted + n_incomplete</tt>):</p>
+<ul>
+  <li><b>recovered</b> &mdash; reached <b>recovery_target</b> before the next
+  event or the end of the series.</li>
+  <li><b>interrupted</b> &mdash; a new event occurred before recovery completed.
+  The maximum recovered fraction reached before the interruption is recorded
+  (see <b>mean_percent_restored</b>). This answers the question "does the signal
+  restore before the next event?".</li>
+  <li><b>incomplete</b> &mdash; the event was still open at the end of the
+  series (it simply ran out of observations). These are counted separately in
+  <b>n_incomplete</b> and are <b>excluded</b> from <b>mean_percent_restored</b>,
+  so that events late in the season do not bias the restored-fraction statistic
+  downward.</li>
+</ul>
+
+<h2>OUTPUTS</h2>
+
+<p>All outputs are summary rasters written with the <b>output</b> prefix, one
+value per pixel (or, with <b>vector</b>, one value per parcel, constant across
+the parcel's pixels), masked to pixels that have at least one clear observation
+and to the current <tt>MASK</tt>:</p>
+<ul>
+  <li><b>&lt;output&gt;_count</b> &mdash; number of detected events.</li>
+  <li><b>&lt;output&gt;_first_doy</b>, <b>&lt;output&gt;_last_doy</b> &mdash;
+  day-of-year of the first and last event.</li>
+  <li><b>&lt;output&gt;_mean_magnitude</b>, <b>&lt;output&gt;_max_magnitude</b>
+  &mdash; mean and largest event magnitude.</li>
+  <li><b>&lt;output&gt;_n_recovered</b>, <b>&lt;output&gt;_frac_recovered</b>
+  &mdash; number and fraction of events that recovered.</li>
+  <li><b>&lt;output&gt;_mean_recovery_days</b> &mdash; mean time to recovery
+  over recovered events.</li>
+  <li><b>&lt;output&gt;_mean_percent_restored</b> &mdash; mean maximum recovered
+  fraction (0-100) over interrupted events.</li>
+  <li><b>&lt;output&gt;_n_incomplete</b> &mdash; events still open at the end of
+  the series.</li>
+  <li><b>&lt;output&gt;_n_drops</b>, <b>&lt;output&gt;_n_rises</b> &mdash; only
+  with <b>direction=both</b>.</li>
+</ul>
+
+<h2>PARCEL-LEVEL ANALYSIS</h2>
+
+<p><em>t.rast.eventdetect</em> detects events per pixel. Where the landscape is
+organized into management units (agricultural parcels, mown meadows, forest
+stands), analyzing those units instead of raw pixels is usually more accurate,
+because mixed and edge pixels are the main source of noise: Kolecka et al.
+(2018) found parcel and shrunken-parcel units more accurate than raw pixels for
+exactly this reason. There are two ways to work at the parcel level, and they
+answer different questions.</p>
+
+<h3>Detecting on parcels (<tt>vector</tt>)</h3>
+
+<p>Pass a parcel vector map with <b>vector</b>. Each observation is then reduced
+to a per-parcel median before detection, and the detection runs once per parcel
+instead of once per pixel. The summary rasters are written as usual, now
+constant within each parcel.</p>
+
+<p>This is the most accurate route for parcels that are managed as one unit.
+Detection is a nonlinear threshold, so thresholding a denoised parcel-median
+signal is not the same as averaging the yes/no decisions of many noisy pixels
+(threshold-of-median is not median-of-thresholds). The parcel median also fills
+cloud gaps: a date still yields a value whenever enough of the parcel is clear,
+even when individual pixels are cloudy, so fewer observations are lost.</p>
+
+<div class="code"><pre>
+g.region raster=grassland_mask -p
+
+t.rast.eventdetect input=S2_ndvi year=2021 output=mow vector=parcels \
+  direction=drop threshold=0.2 lookback=2 recovery_target=0.8
+</pre></div>
+
+<p>The aggregation statistic is the median, which is robust to a few off-parcel
+or lingering-cloud pixels. <b>min_clear</b> sets how much of a parcel must be
+clear for a date to contribute (a fraction between 0 and 1): with the default
+<tt>0</tt> a single clear pixel suffices, while <b>min_clear=0.5</b> requires a
+majority of the parcel to be clear.</p>
+
+<p>Edge handling is a preprocessing choice rather than a module setting, which is
+why it is left to you: to work with "shrunken parcels" that exclude boundary
+pixels, buffer the parcel map inward first (<em>v.buffer -s</em> with a negative
+distance) and pass the buffered map as <b>vector</b>. This keeps the boundary
+rule, the aggregation statistic, and the clear-fraction rule under your control
+instead of fixing them inside the module.</p>
+
+<h3>Aggregating results to parcels (<tt>v.rast.stats</tt>)</h3>
+
+<p>Run the module normally on pixels, then summarize each summary raster into the
+parcel attribute table with <em>v.rast.stats</em>. Unlike the <b>vector</b>
+route, this keeps the per-pixel (sub-parcel) heterogeneity available: it does not
+collapse a parcel to a single signal, so you can still see how variable the
+response was within a unit.</p>
+
+<p>Use the mean (<b>method=average</b>) for the continuous outputs
+(mean_magnitude, max_magnitude, frac_recovered, mean_recovery_days,
+mean_percent_restored) and a representative value for the integer count outputs
+(count, n_recovered, n_incomplete). <em>v.rast.stats</em> has no mode, so use the
+median (<b>method=median</b>) as the representative count; if you need a true
+majority, rasterize the parcels and use a raster mode tool.</p>
+
+<div class="code"><pre>
+t.rast.eventdetect input=S2_ndvi year=2021 output=mow \
+  direction=drop threshold=0.2 lookback=2 recovery_target=0.8
+
+v.rast.stats map=parcels raster=mow_mean_magnitude \
+  column_prefix=mag method=average
+v.rast.stats map=parcels raster=mow_count \
+  column_prefix=n_events method=median
+</pre></div>
+
+<p>The same commands also work after the <b>vector</b> route: the summary rasters
+are then constant within each parcel, so any statistic (including
+<b>method=average</b>) returns that single parcel value.</p>
+
+<p>If you need an aggregation statistic other than the median, or want to keep
+the parcel-median series itself, build it yourself before running the module:
+reduce each date to a per-parcel value (for example
+<em>r.stats.quantile base=parcels cover=&lt;index_map&gt; percentiles=50
+output=&lt;parcel_median&gt;</em> for the median), register the results into a
+new strds, and run <em>t.rast.eventdetect</em> on that strds without
+<b>vector</b>.</p>
+
+<h3>Choosing between them</h3>
+
+<p>Use <b>vector</b> to maximize detection accuracy for parcels managed as one
+unit; it is also the cheapest of the parcel routes, because detection runs once
+per parcel rather than repeating the identical computation for every pixel of the
+parcel. Use <em>v.rast.stats</em> on per-pixel results when you want to keep
+sub-parcel heterogeneity. In both cases the choice of aggregation statistic
+(median, mean, trimmed) and of a clear-fraction rule are yours to set.</p>
+
+<h2>NOTES</h2>
+
+<p>The module runs on the current computational region and honors the current
+raster <tt>MASK</tt>. Set the region to the input maps before running.</p>
+
+<p>The analysis is vectorized over space and loops over time, so cost scales
+with the number of maps, not the number of pixels; it is not a per-pixel Python
+loop. Memory holds only a handful of full-region layers (plus the year stack
+when <b>threshold_type=mad</b>).</p>
+
+<p>To analyze management units rather than raw pixels, see
+<em>PARCEL-LEVEL ANALYSIS</em> above.</p>
+
+<h2>EXAMPLE</h2>
+
+<p>Detect grassland mowing events in an NDVI strds for 2021, using the Kolecka
+et al. (2018) rule set (0.2 drop, comparison to the last two clear
+observations), and characterize regrowth:</p>
+
+<div class="code"><pre>
+g.region raster=grassland_mask -p
+
+t.rast.eventdetect input=S2_ndvi year=2021 output=mow \
+  direction=drop threshold=0.2 threshold_type=absolute \
+  lookback=2 min_separation=10 recovery_target=0.8
+
+r.colors map=mow_count color=viridis
+</pre></div>
+
+<h2>REFERENCES</h2>
+
+<p>Kolecka, N., Ginzler, C., Pazur, R., Price, B., Verburg, P.H. (2018).
+<em>Regional Scale Mapping of Grassland Mowing Frequency with Sentinel-2 Time
+Series.</em> Remote Sensing 10(8), 1221.
+<a href="https://doi.org/10.3390/rs10081221">doi:10.3390/rs10081221</a></p>
+
+<h2>SEE ALSO</h2>
+
+<p>
+<em><a href="t.rast.algebra.html">t.rast.algebra</a></em>,
+<em><a href="t.rast.accdetect.html">t.rast.accdetect</a></em>,
+<em><a href="t.rast.aggregate.html">t.rast.aggregate</a></em>,
+<em><a href="t.rast.mapcalc.html">t.rast.mapcalc</a></em>
+</p>
+
+<h2>AUTHOR</h2>
+
+<p>Paulo van Breugel</p>

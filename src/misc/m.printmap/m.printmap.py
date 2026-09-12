@@ -192,7 +192,7 @@
 # % guisection: Vector
 # %end
 
-# %option G_OPT_C
+# %option G_OPT_CN
 # % key: color
 # % answer: black
 # % description: Vector line color
@@ -367,9 +367,8 @@
 # % key: legend_raster_flags
 # % type: string
 # % required: no
-# % multiple: yes
-# % options: v,c,n,f,l,t,s,d
-# % description: Flags passed to d.legend
+# % label: Flags passed to d.legend, e.g. 'ct'
+# % description: Any of v,c,t,n,s,f,d,b,l (as in d.legend; commas optional)
 # % guisection: Raster legend
 # %end
 
@@ -562,8 +561,8 @@
 # % key: barscale_flags
 # % type: string
 # % required: no
-# % options: n,t,f
-# % description: Flags passed to d.barscale
+# % label: Flags passed to d.barscale, e.g. 'ft'
+# % description: Any of f,t,n (as in d.barscale; commas optional)
 # % guisection: Barscale
 # %end
 
@@ -622,8 +621,8 @@
 # % key: grid_flags
 # % type: string
 # % required: no
-# % options: n,b,t,g,w,c,d,f,a
-# % description: Flags passed to d.grid
+# % label: Flags passed to d.grid, e.g. 'wc'
+# % description: Any of a,g,w,c,d,f,n,b,t (as in d.grid; commas optional)
 # % guisection: Grid
 # %end
 
@@ -754,6 +753,35 @@ _FLOAT_LIST_KEYS = {"at"}
 # Spec keys holding a d.* flag string.
 _FLAG_KEYS = {"flags"}
 
+# Flags accepted by the d.* command behind each layer type.
+_FLAG_CHOICES = {
+    "legend_raster": "vctnsfdbl",  # d.legend
+    "barscale": "ftn",  # d.barscale
+    "grid": "agwcdfnbt",  # d.grid
+}
+
+
+def normalize_flags(value, kind=None):
+    """Return the flag string the d.* command expects. Flags may be given the
+    way the underlying command takes them ('ct'), as a comma- or
+    space-separated list ('c,t'), or a mix; duplicates are dropped. Unknown
+    flags are refused, listing the valid ones for that layer type."""
+    letters = [c for c in str(value).replace(",", " ").replace(";", " ").split()]
+    flags = "".join(letters)
+    allowed = _FLAG_CHOICES.get(kind, "")
+    if allowed:
+        unknown = sorted({c for c in flags if c not in allowed})
+        if unknown:
+            gs.fatal(
+                "Unknown flag(s) '%s' for a '%s' layer. Valid flags are: %s."
+                % ("".join(unknown), kind, ", ".join(allowed))
+            )
+    seen = []
+    for char in flags:  # keep order, drop repeats
+        if char not in seen:
+            seen.append(char)
+    return "".join(seen)
+
 # All GUI option names that belong to some layer type (used by operation=update
 # to tell "wrong option for this layer kind" from an unrelated control option).
 _LAYER_OPT_NAMES = {name for opts in _TYPE_OPTIONS.values() for name in opts}
@@ -871,13 +899,14 @@ def capture_settings(settings, options, provided):
     return updated
 
 
-def _coerce_layer_value(spec_key, value):
+def _coerce_layer_value(spec_key, value, kind=None):
     """Coerce a raw option string into the value stored under a spec key
-    (float list for 'at', cleaned flag string for 'flags', else the string)."""
+    (float list for 'at', normalized flag string for 'flags', else the
+    string)."""
     if spec_key in _FLOAT_LIST_KEYS:
         return [float(v) for v in value.split(",")]
     if spec_key in _FLAG_KEYS:
-        return value.replace(",", "")
+        return normalize_flags(value, kind)
     return value
 
 
@@ -891,7 +920,7 @@ def build_layer(options):
     for opt_name, spec_key in _TYPE_OPTIONS[kind].items():
         value = options.get(opt_name, "")
         if value != "":
-            layer[spec_key] = _coerce_layer_value(spec_key, value)
+            layer[spec_key] = _coerce_layer_value(spec_key, value, kind)
 
     # opacity always carries a meaningful default and applies to every type.
     layer["opacity"] = float(options["opacity"])
@@ -1179,7 +1208,7 @@ def render_layer(layer, outfile, layout):
         # Pass only what the user set, for the rest the default
         # values are used.
         params = {"raster": layer["raster"]}
-        flags = layer.get("flags", "").replace(",", "")
+        flags = normalize_flags(layer.get("flags", ""), kind)
         if flags:
             params["flags"] = flags
         params["fontsize"] = _ratio_font_px(layer, layout)
@@ -1242,7 +1271,7 @@ def render_layer(layer, outfile, layout):
                 params[key] = layer[key]
         params["fontsize"] = _ratio_font_px(layer, layout)
         if "flags" in layer:
-            params["flags"] = layer["flags"].replace(",", "")
+            params["flags"] = normalize_flags(layer["flags"], kind)
         gs.run_command("d.barscale", **params)
 
     elif kind == "grid":
@@ -1254,7 +1283,7 @@ def render_layer(layer, outfile, layout):
                 params[key] = layer[key]
         params["fontsize"] = _ratio_font_px(layer, layout, default=0.5)
         if "flags" in layer:
-            params["flags"] = layer["flags"].replace(",", "")
+            params["flags"] = normalize_flags(layer["flags"], kind)
         gs.run_command("d.grid", **params)
 
     else:
@@ -1495,7 +1524,8 @@ def op_update(path, layers, settings, options, provided):
             applied.append("opacity")
         elif opt_name in type_opts:
             spec_key = type_opts[opt_name]
-            layer[spec_key] = _coerce_layer_value(spec_key, options[opt_name])
+            layer[spec_key] = _coerce_layer_value(spec_key, options[opt_name],
+                                                  kind)
             applied.append(opt_name)
         elif opt_name in _LAYER_OPT_NAMES:
             wrong_kind.append(opt_name)  # a layer option, but not for this kind

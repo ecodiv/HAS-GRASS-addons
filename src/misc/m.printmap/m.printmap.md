@@ -32,6 +32,11 @@ manual. A vector layer uses the *d.vect* parameters (`map`, `type`, `color`,
 longer GUI option names (e.g. `legend_raster_digits`) are also accepted as
 aliases and are converted to the canonical parameter name on the next write.
 
+Flags follow the same convention as the command they are passed to, so
+`legend_raster_flags=st` gives *d.legend* its `-s` and `-t` flags. A
+comma-separated form (`s,t`) is accepted as well, and is normalized to the
+concatenated form when the spec is written.
+
 The exception is font size: each text element stores a `font_scale` (and the
 raster legend a `title_scale`) that is a *ratio* of the template base font size
 (see [Fonts](#fonts)). Template-level settings live in a `settings` block at the
@@ -174,6 +179,13 @@ one point is one pixel, so `line_width=1` is a hairline on screen.
 Note: for a *categorical* raster the `d.legend` module fits the class labels to
 the legend box and may override the requested font size.
 
+Note: for an integer (CELL) raster, `d.legend` draws a discrete category legend.
+Ticks belong to the continuous legend, so `legend_raster_flags=t` has no effect
+there; combine it with the smooth-gradient flag (`legend_raster_flags=st`) to get
+a gradient with ticks. For a floating-point (FCELL/DCELL) raster, `t` works on
+its own. Values given in **legend_raster_label_values** must lie within the
+raster's range, otherwise `d.legend` stops with an "out of range" error.
+
 ### TEMPLATE SETTINGS
 
 The style/layout options **font**, **fontsize**, **dpi**, **margin** and
@@ -253,7 +265,7 @@ m.printmap spec=NC01.json type=vector vector=boundary_county \
 # Add legend (labels use the base font size; ratio defaults to 1)
 m.printmap spec=NC01.json type=legend_raster \
     legend_raster_map=elev_state_500m legend_raster_at=12,16,6,40 \
-    legend_raster_flags=s,t
+    legend_raster_flags=st
 
 # Add logo
 m.printmap spec=NC01.json type=image image=grass-logo.png \
@@ -294,7 +306,7 @@ m.printmap spec=NC01.json type=raster \
 m.printmap spec=NC01.json type=legend_raster \
     legend_raster_map=2000_01_precip@climate_2000_2012 \
     legend_raster_at=12,16,6,40 \
-    legend_raster_flags=s,t operation=replace position=4
+    legend_raster_flags=st operation=replace position=4
 
 # Render the map to PNG
 m.printmap spec=NC01.json operation=render \
@@ -328,7 +340,7 @@ m.printmap spec=NC03.json type=vector vector=boundary_county \
 # Add legend
 m.printmap spec=NC03.json type=legend_raster \
     legend_raster_map=elev_state_500m legend_raster_at=5,95,101,104 \
-    legend_raster_flags=s,t
+    legend_raster_flags=st
 
 # Add logo
 m.printmap spec=NC03.json type=image image=grass-logo.png \
@@ -367,7 +379,7 @@ m.printmap spec=NC04.json type=vector vector=boundary_county \
 # Add legend
 m.printmap spec=NC04.json type=legend_raster \
     legend_raster_map=elev_state_500m legend_raster_at=-7,-2,25,95 \
-    legend_raster_flags=s,t
+    legend_raster_flags=st
 
 # Add logo
 m.printmap spec=NC04.json type=image image=grass-logo-horizontal.png \
@@ -388,8 +400,8 @@ The resulting map:
 
 ### Example 5
 
-Let's know combine two raster layers, the elevation map and a relief map based
-on that map, by changing the opacity of one of them. We'll update the spec file
+Let's combine two raster layers, the elevation map and a relief map based on
+that map, by changing the opacity of one of them. We'll update the spec file
 created earlier.
 
 ```sh
