@@ -55,7 +55,7 @@ _GXW_VECTOR = _identity(
 )
 _GXW_LABELS = _identity(
     "map", "type", "attribute_column", "label_size", "label_color", "font",
-    "xref", "cats", "where",
+    "xref", "yref", "cats", "where",
 )
 _GXW_TASKS = {
     "d.rast": ("raster", _identity("map", "values"), None),

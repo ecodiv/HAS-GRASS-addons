@@ -1,0 +1,134 @@
+<h2>DESCRIPTION</h2>
+
+<em>r.colors.brewer</em> builds a
+<a href="https://colorbrewer2.org">ColorBrewer</a> color table for a raster
+map. The user selects a scheme from one of three families (sequential,
+diverging or qualitative) and the number of classes. The module then either
+applies the color table to the raster map with <em>r.colors</em>, or, when no
+<b>map</b> is given (or with the <b>-n</b> flag), prints the color rules to
+standard output so they can be reused.
+
+<h3>Scheme families</h3>
+
+One scheme must be chosen from exactly one of the three families:
+
+<ul>
+<li><b>sequential</b> for ordered data that runs from low to high: <em>Blues,
+BuGn, BuPu, GnBu, Greens, Greys, OrRd, Oranges, PuBu, PuBuGn, PuRd, Purples,
+RdPu, Reds, YlGn, YlGnBu, YlOrBr, YlOrRd</em>.</li>
+<li><b>diverging</b> for data with a meaningful midpoint (such as zero or a
+mean): <em>BrBG, PRGn, PiYG, PuOr, RdBu, RdGy, RdYlBu, RdYlGn,
+Spectral</em>.</li>
+<li><b>qualitative</b> for categorical data: <em>Accent, Dark2, Paired,
+Pastel1, Pastel2, Set1, Set2, Set3</em>.</li>
+</ul>
+
+<p>
+The number of <b>classes</b> must be within the range the chosen scheme
+supports: 3 to 9 for most sequential schemes (3 to 8 for YlOrRd), 3 to 11 for
+diverging schemes, and up to 3 to 12 for qualitative schemes. An unsupported
+number of classes is reported with the valid range for that scheme.
+
+<h3>Mapping colors to values</h3>
+
+For sequential and diverging schemes the colors are, by default, spread evenly
+across the map range as a continuous gradient. With the <b>-d</b> flag discrete
+class bands are created with hard color steps.
+
+<p>
+By default, the rules are written as percentages. The same rules therefore apply
+to any map and can be stored once and reused. Supply <b>range</b> as
+<tt>min,max</tt> to write absolute breakpoints across a fixed range instead.
+
+<p> The <b>breakpoints</b> option sets the class boundaries explicitly for
+sequential and diverging schemes. It takes <tt>classes + 1</tt> values as plain
+numbers (absolute values) or as percentages (for example
+<tt>0%,20%,40%,60%,80%,100%</tt>). With <b>-d</b> each interval becomes a flat
+band. Without it, the class colors are centered on their intervals and
+interpolated into a gradient.
+
+<p>
+Qualitative schemes assign the colors to integer categories 1 to
+<b>classes</b>. The <b>breakpoints</b>, <b>range</b> and <b>-d</b> settings do
+not apply to them.
+
+<p>
+The <b>-r</b> flag reverses the order of the colors. The <b>null_color</b>
+option sets the color of NULL cells, given as a GRASS color name or as
+<tt>R:G:B</tt>.
+
+<h2>NOTES</h2>
+
+Percentage rules depend on the range of the map they are applied to. If the
+rules are meant to be exported later to a QGIS style with absolute breakpoints
+with <em>r.colors.toqml</em>, build them with <b>range</b> or absolute
+<b>breakpoints</b> so that no percentages remain in the color table.
+
+<h2>EXAMPLES</h2>
+
+Apply a 7-class diverging <em>RdYlGn</em> color table to a raster map:
+
+<div class="code"><pre>
+r.colors.brewer map=elevation diverging=RdYlGn classes=7
+</pre></div>
+
+<p>
+Print a 5-class sequential <em>Blues</em> rules string and apply it with
+<em>r.colors</em>:
+
+<div class="code"><pre>
+r.colors.brewer sequential=Blues classes=5 -n | r.colors map=elevation rules=-
+</pre></div>
+
+<p>
+Create discrete classes with user-defined breakpoints and a white NULL color:
+
+<div class="code"><pre>
+r.colors.brewer map=ndvi sequential=YlGn classes=5 -d \
+    breakpoints=-0.2,0.0,0.2,0.4,0.6,1.0 null_color=white
+</pre></div>
+
+<p>
+Write absolute breakpoints across a fixed range (for a legend shared between
+maps):
+
+<div class="code"><pre>
+r.colors.brewer map=slope sequential=Oranges classes=6 range=0,45
+</pre></div>
+
+<p>
+Use the printed rules from Python with <em>grass.tools</em>:
+
+<div class="code"><pre>
+from io import StringIO
+from grass.tools import Tools
+
+tools = Tools()
+rules = tools.r_colors_brewer(sequential="Blues", classes=5, flags="n").text
+tools.r_colors(map="water_bodies", rules=StringIO(rules))
+</pre></div>
+
+<h2>SEE ALSO</h2>
+
+<em>
+<a href="https://grass.osgeo.org/grass-stable/manuals/r.colors.html">r.colors</a>,
+<a href="https://grass.osgeo.org/grass-stable/manuals/r.colors.out.html">r.colors.out</a>,
+<a href="https://grass.osgeo.org/grass-stable/manuals/r3.colors.html">r3.colors</a>,
+<a href="https://grass.osgeo.org/grass-stable/manuals/v.colors.html">v.colors</a>,
+<a href="https://grass.osgeo.org/grass-stable/manuals/addons/r.colors.qml.html">r.colors.qml</a>,
+<a href="https://grass.osgeo.org/grass-stable/manuals/addons/r.colors.toqml.html">r.colors.toqml</a>
+</em>
+
+<h2>AUTHOR</h2>
+
+<a href="https://ecodiv.earth">Paulo van Breugel</a>, <a
+href="https://has.nl">HAS green academy</a>, <a
+href="https://www.has.nl/en/research/professorships/innovative-bio-monitoring-professorship/">Innovative
+Biomonitoring research group</a>, <a
+href="https://www.has.nl/en/research/professorships/climate-robust-landscapes-professorship/">Climate-robust
+Landscapes research group</a>
+
+<p>
+The bundled ColorBrewer color values are by Cynthia Brewer
+(<a href="https://colorbrewer2.org">colorbrewer2.org</a>) and are licensed
+under the Apache License 2.0.

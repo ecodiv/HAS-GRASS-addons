@@ -34,7 +34,7 @@ _**m.printmap**_ - Composite raster, vector, legend and label layers into a PNG 
 * **raster**\=_name_: Raster map to display
 * **values**\=_string_: List of raster values to display (others transparent)
 * **vector**\=_name_: Name of input vector map - Vector map to display
-* **display\_type**\=_string_ - Vector feature type - Options: _area, line, boundary, point, centroid_ - Default: _area_
+* **display\_type**\=_string_ - Vector feature type (default: auto-detected from the map, else area) - Options: _area, line, boundary, point, centroid_
 * **color**\=_name_: Color - Vector line color - Default: _black_
 * **fill\_color**\=_name_: Color - Vector fill color - Default: _none_
 * **line\_width**\=_float_: Vector line width in points (1 pt = 1 px at 96 dpi)
@@ -43,7 +43,7 @@ _**m.printmap**_ - Composite raster, vector, legend and label layers into a PNG 
 * **icon**\=_string_: Point/centroid symbol (e.g. basic/circle)
 * **size**\=_float_: Point/centroid symbol size in points (1 pt = 1 px at 96 dpi)
 * **labels**\=_name_: Name of input vector map - Vector map to label
-* **label\_type**\=_string_: Feature type to label - Options: _area, line, boundary, point, centroid_ - Default: _area_
+* **label\_type**\=_string_: Feature type to label (default: auto-detected from the map, else area) - Options: _area, line, boundary, point, centroid_
 * **attribute\_column**\=_name_: Attribute column to label with
 * **label\_font\_scale**\=_float_: Label text size as a ratio of the base font size (default 1)
 * **label\_color**\=_name_: Color - Label text color - Default: _black_

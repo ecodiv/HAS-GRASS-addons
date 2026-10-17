@@ -186,9 +186,8 @@
 # % key: display_type
 # % type: string
 # % required: no
-# % answer: area
 # % options: area,line,boundary,point,centroid
-# % description: Vector feature type
+# % description: Vector feature type (default: auto-detected from the map, else area)
 # % guisection: Vector
 # %end
 
@@ -256,9 +255,8 @@
 # % key: label_type
 # % type: string
 # % required: no
-# % answer: area
 # % options: area,line,boundary,point,centroid
-# % description: Feature type to label
+# % description: Feature type to label (default: auto-detected from the map, else area)
 # % guisection: Labels
 # %end
 
@@ -297,7 +295,18 @@
 # % type: string
 # % required: no
 # % options: left,center,right
-# % description: Label horizontal reference
+# % answer: center
+# % description: Label horizontal justification
+# % guisection: Labels
+# %end
+
+# %option
+# % key: yref
+# % type: string
+# % required: no
+# % options: top,center,bottom
+# % answer: center
+# % description: Label vertical justification
 # % guisection: Labels
 # %end
 
@@ -664,6 +673,7 @@ import sys
 import tempfile
 
 import grass.script as gs
+from grass.exceptions import CalledModuleError
 
 try:
     from PIL import Image, ImageColor
@@ -701,6 +711,7 @@ _TYPE_OPTIONS = {
         "label_color": "label_color",
         "label_font": "font",
         "xref": "xref",
+        "yref": "yref",
         "label_cats": "cats",
         "label_where": "where",
     },
@@ -1133,6 +1144,36 @@ def _scale_px(value, layout, as_int=False):
     return int(round(scaled)) if as_int else round(scaled, 3)
 
 
+def detect_vector_types(mapname):
+    """Return a d.vect 'type' string derived from the map's topology, or None
+    if it could not be determined. Areas take precedence over their component
+    boundaries and centroids so polygon maps render as filled areas."""
+    try:
+        info = gs.parse_command("v.info", map=mapname, flags="t")
+    except CalledModuleError:
+        return None
+
+    def count(key):
+        try:
+            return int(info.get(key, 0))
+        except (TypeError, ValueError):
+            return 0
+
+    types = []
+    if count("areas"):
+        types.append("area")
+    else:
+        if count("centroids"):
+            types.append("centroid")
+        if count("boundaries"):
+            types.append("boundary")
+    if count("points"):
+        types.append("point")
+    if count("lines"):
+        types.append("line")
+    return ",".join(types) if types else None
+
+
 def render_layer(layer, outfile, layout):
     """Render one layer to a canvas-sized PNG. Map layers are confined to the
     map rectangle; image and legend layers may be placed outside it."""
@@ -1183,9 +1224,12 @@ def render_layer(layer, outfile, layout):
         gs.run_command("d.rast", **params)
 
     elif kind == "vector":
+        # An explicit 'type' always wins; otherwise auto-detect from the map's
+        # topology and fall back to 'area' when nothing could be determined.
+        vtype = layer.get("type") or detect_vector_types(layer["map"]) or "area"
         params = {
             "map": layer["map"],
-            "type": layer.get("type", "area"),
+            "type": vtype,
             "color": layer.get("color", "black"),
             "fill_color": layer.get("fill_color", "none"),
             "width": _scale_px(layer.get("width", 1), layout, as_int=True),
@@ -1198,14 +1242,16 @@ def render_layer(layer, outfile, layout):
         gs.run_command("d.vect", **params)
 
     elif kind == "labels":
+        ltype = layer.get("type") or detect_vector_types(layer["map"]) or "area"
         params = {
             "map": layer["map"],
-            "type": layer.get("type", "area"),
+            "type": ltype,
             "attribute_column": layer["attribute_column"],
             "label_size": _ratio_font_px(layer, layout),
             "label_color": layer.get("label_color", "black"),
             "font": layer.get("font", "arial"),
             "xref": layer.get("xref", "center"),
+            "yref": layer.get("yref", "center"),
             "fill_color": "none",
             "color": "none",
         }

@@ -1,0 +1,179 @@
+<h2>DESCRIPTION</h2>
+<p><em>t.rast.event</em> detects and counts relatively rapid changes ("events") in a
+space-time raster dataset (strds). It furthermore records the recovery time
+after each event. An event is one continuous descent (a drop) or ascent (a
+rise). For a drop, the event is measured by its peak-to-trough amplitude. For a
+rise, the opposite is measured. This generalizes the grassland mowing-frequency
+method of Kolecka et al. (2018) to any abrupt disturbance and recovery (harvest,
+flood or hail defoliation, fire and drought die-back) and, with
+<code>direction=rise</code>, to rapid increases such as green-up.</p>
+<p>Clouds and shadows are expected to be masked to NULL beforehand. Note that the
+module does not interpolate across gaps. It connects successive observations,
+with the important condition that it will not connect observations further than
+<em>max_gap</em> apart. Pre-filling the gaps (even linearly) is not needed and, in
+fact, not recommended. It is also not recommended to use smoothed or
+harmonically fitted series (e.g. a HANTS climatology). Such curves suppress the
+short, sharp changes that this module is meant to find.</p>
+<p>By default the analysis is done per yearly cycle (<code>groupby=year</code>). Give <code>year</code> to
+restrict it to a single cycle, or leave <code>year</code> unset to analyze every cycle
+present in the input, each on its own. Note that a partial cycle is analyzed as
+given, so it is up to the user to provide complete cycles.</p>
+<p>The cycle need not be the calendar year. <code>year_start</code> sets the month-day on which
+each cycle begins (default <code>01-01</code>). Use it for a monsoon or hydrological year,
+for example <code>year_start=06-01</code>, so that a drop and its recovery straddling
+1 January stay in one cycle instead of being split across two. A cycle is
+identified by the calendar year in which it starts, so <code>year=2020</code> with
+<code>year_start=06-01</code> selects the cycle from 1 June 2020 to 31 May 2021.</p>
+<p>Set <code>groupby=none</code> to treat the whole dataset as one continuous series instead of
+grouping it into yearly cycles. This suits data with a single value per year (or
+any coarse series): with <code>direction=drop</code> a multi-year decline and its
+subsequent recovery are then detected as one event, turning the module into a
+drop-and-recovery detector across years. In this mode <code>year</code> and <code>year_start</code> do
+not apply, and the time-based settings (<code>max_gap</code>, <code>max_event_days</code>, recovery
+times) are still expressed in days, so they scale with the observation interval
+(e.g. about 365 days between annual maps).</p>
+<h3 id="how-events-are-detected">HOW EVENTS ARE DETECTED</h3>
+<p>For the chosen <code>direction</code> (<em>drop</em> or <em>rise</em>) the module walks the observations
+of a pixel in time and follows each descent (or rise) to its turning point,
+tolerating gaps between successive observations of up to <code>max_gap</code> days and
+measuring how far the signal moves (its peak-to-trough amplitude). A descent or
+rise ends when the signal rebounds by more than <code>noise_tolerance</code>, when a gap
+longer than <code>max_gap</code> interrupts it, or at the end of the season.
+<code>noise_tolerance</code> is the rebound expressed as a fraction of the current
+peak-to-trough amplitude (default <code>0.15</code>). A closed descent is counted as an
+event when its peak-to-trough amplitude reaches <code>threshold</code>.</p>
+<p><code>threshold_type</code> sets how <code>threshold</code> is read. When set to <code>absolute</code>, the
+threshold is the value units of the data (default <code>0.2</code>, suitable for NDVI).
+When set to <code>relative</code>, it represents a fraction of the pre-event level. And
+when set to <code>mad</code>, the threshold represents a multiple of the per-pixel robust
+standard deviation (1.4826 × MAD) computed over the analyzed year. Note that
+this option loads the year stack into memory, so keep the computational region
+to a reasonable size.</p>
+<p><code>max_gap</code> limits how far a descent is followed across missing data, so that
+gradual seasonal development is not interpreted as one abrupt event. Set it
+directly in days, or leave it unset to use the default of 3 × <code>step</code>. <code>step</code> is
+the nominal observation interval. When <code>step</code> is not given, it is derived from
+the dataset granularity if that is a whole number of days. Otherwise, it is
+computed as the median spacing between the observation dates.</p>
+<p><code>max_event_days</code> determines what is considered abrupt. A descent that takes
+longer than this many days from peak to trough is treated as a gradual
+(seasonal) change and not counted. It defaults to <code>30</code> (about one month) with
+<code>groupby=year</code>, and to <code>1.5 × step</code> with <code>groupby=none</code>, so that a single step of
+a coarse series still qualifies. Set a large value to disable it. <code>season_start</code>
+and <code>season_end</code> (calendar days of year, applied regardless of <code>year_start</code>)
+restrict detection to a user-defined season.</p>
+<h3 id="recovery">RECOVERY</h3>
+<p>After each event the module tracks how far the signal returns toward a reference
+level. An event counts as <em>recovered</em> when the recovered fraction reaches
+<code>recovery_target</code> (default <code>0.8</code>).</p>
+<p>The reference depends on <code>baseline</code>. When set to <code>observed</code>, the recovery target
+is the pre-event peak. The recovered fraction is computed as
+<code>(value - trough) / (peak - trough)</code>. When set to <code>reference</code>, the recovery
+target is the level expected for the time of year, taken from a climatology
+strds (<code>reference</code>, keyed by day-of-year). Recovery is measured as the anomaly
+(observed minus expected). Note that early-January and late-December dates will
+be matched across the year boundary.</p>
+<p>There are three possible recovery outcomes. An event can reach the
+<code>recovery_target</code> before the next event or the end of the series. This is
+counted as <em>recovered</em>. If a new event began before recovery was completed, the
+maximum recovered fraction reached before the interruption is recorded (see
+<code>mean_percent_restored</code>). This answers the question "does the signal restore
+before the next event?". The third possibility is that the event was still open
+at the end of the series, or continuity was broken by a gap longer than
+<code>max_gap</code>. These are counted separately in <code>n_incomplete</code> and are excluded from
+<code>mean_percent_restored</code>.</p>
+<h3 id="outputs">OUTPUTS</h3>
+<p>The module creates a number of summary rasters listed below.</p>
+<ul>
+<li><code>&lt;output&gt;_count</code>: Number of detected events.</li>
+<li><code>&lt;output&gt;_first_doy</code>, <code>&lt;output&gt;_last_doy</code>: Day-of-year of the trough (or peak)
+of the first and last event. With <code>groupby=none</code> these instead hold the number
+of days since the first observation, since a single day-of-year would be
+ambiguous across years. Either way the calendar date is the category label.</li>
+<li><code>&lt;output&gt;_mean_magnitude</code>, <code>&lt;output&gt;_max_magnitude</code>: Mean and largest event magnitude (peak-to-trough) or smalles trough (through-to-peak).</li>
+<li><code>&lt;output&gt;_n_recovered</code>, <code>&lt;output&gt;_frac_recovered</code>: Number and fraction of
+events that recovered.</li>
+<li><code>&lt;output&gt;_mean_recovery_days</code>: Mean time to recovery over recovered events.</li>
+<li><code>&lt;output&gt;_mean_percent_restored</code>: Mean maximum recovered fraction (0-100) over
+interrupted events.</li>
+<li><code>&lt;output&gt;_n_incomplete</code>: Number of events that are still open at the end of
+the series, or with continuity broken by a gap longer than <code>max_gap</code>.</li>
+</ul>
+<p>Each day-of-year raster also carries the matching calendar date (<code>YYYY-MM-DD</code>)
+as the category label of its value, so <em>r.category</em> and the legend show real
+dates.</p>
+<p>With the <code>-g</code> flag, three diagnostic rasters are also written from the in-season
+observations to help validate the settings against the available observations:</p>
+<ul>
+<li><code>&lt;output&gt;_n_obs</code>: number of observations used (integer <code>CELL</code>).</li>
+<li><code>&lt;output&gt;_mean_gap</code>, <code>&lt;output&gt;_max_gap_obs</code>: mean and largest gap in days
+between consecutive observations.</li>
+</ul>
+<p>If <code>max_gap_obs</code> is well above <code>max_gap</code>, real changes may be split by long
+cloud periods. If <code>n_obs</code> is low, results should be interpreted with care.</p>
+<p>For a single cycle (a <code>year</code> restriction, or <code>groupby=none</code>), the outputs are
+plain rasters named as above. When several cycles are analyzed, the result of
+each cycle is written as a raster with the start-year suffix
+(<code>&lt;output&gt;_count_2021</code>, <code>&lt;output&gt;_count_2022</code>, etc). And they are registered into
+one space-time dataset named after the metric (<code>&lt;output&gt;_count</code>,
+<code>&lt;output&gt;_first_doy</code>, ...), each layer time-stamped at its cycle start.</p>
+<h3 id="parcel-level-analysis">PARCEL-LEVEL ANALYSIS</h3>
+<p><em>t.rast.event</em> can also detect events at the parcel level. To do so, pass
+a parcel vector map with <code>vector</code>. The module will in that case compute the
+median per-parcel median and use this as input for event detection. This will
+result in summary rasters with constant values within each parcel. Use the
+<code>min_clear</code> parameter to set how much of a parcel must have a value for a date
+to contribute (a fraction between 0 and 1). With the default (<code>0</code>), a single
+valid pixel is enough. With <code>min_clear=0.5</code>, the majority of the pixels within a
+parcel should have a value.</p>
+<h2>NOTES</h2>
+<p>The module runs on the current computational region and honors the current
+raster <code>MASK</code>.</p>
+<p>Runtime scales with the number of maps times the number of cells. Most memory is
+used with <code>threshold_type=mad</code>. Use the <code>memory</code> option to set the maximum
+available RAM.</p>
+<p>The module requires GRASS GIS 8.5 or newer. The input must be an absolute-time
+STRDS.</p>
+<h2>EXAMPLE</h2>
+<p>Detect grassland mowing events in an NDVI strds for 2021 (a 0.2 drop counts as
+an event), characterize regrowth, and also write the gap diagnostics:</p>
+<div class="code"><pre>g.region -a raster=S160312_B01 vector=natura2000 -p
+g.region n=n+100 s=s-100 w=w-100 e=e+100
+r.mask vector=natura2000
+
+t.rast.event input=S2_ndvi year=2021 output=mow -g \
+  direction=drop threshold=0.2 threshold_type=absolute \
+  season_start=60 season_end=300 recovery_target=0.8
+
+r.colors map=mow_count color=viridis</pre></div>
+<p>Analyze several years at once by leaving <code>year</code> unset. Each metric is written as
+a space-time dataset with one raster per year, which can then be queried or
+aggregated over time:</p>
+<div class="code"><pre>t.rast.event input=S2_ndvi output=mow \
+  direction=drop threshold=0.2 season_start=60 season_end=300
+
+t.rast.list input=mow_count
+t.rast.univar input=mow_count</pre></div>
+<p>For a monsoon or hydrological year, start each cycle on another date with
+<code>year_start</code> so a disturbance around 1 January is not split between two years:</p>
+<div class="code"><pre>t.rast.event input=S2_ndvi output=mons \
+  direction=drop threshold=0.2 year_start=06-01</pre></div>
+<p>Detect multi-year drops and their recovery in an annual series (one map per
+year, e.g. annual maximum NDVI or a yearly drought index) by analyzing the whole
+series at once with <code>groupby=none</code>:</p>
+<div class="code"><pre>t.rast.event input=ndvi_annual output=decline groupby=none \
+  direction=drop threshold=0.15 recovery_target=0.8</pre></div>
+<h2>REFERENCES</h2>
+<p>Kolecka, N., Ginzler, C., Pazur, R., Price, B., &amp; Verburg, P. H. (2018).
+Regional Scale Mapping of Grassland Mowing Frequency with Sentinel-2 Time
+Series. Remote Sensing, 10(8), 1221. https://doi.org/10.3390/rs10081221</p>
+<h2>SEE ALSO</h2>
+<p><em><a href="t.rast.stl.html">t.rast.stl</a></em>,
+<em><a href="t.rast.accdetect.html">t.rast.accdetect</a></em>,
+<em><a href="t.rast.aggregate.html">t.rast.aggregate</a></em></p>
+<h2>AUTHOR</h2>
+<p><a href="https://ecodiv.earth">Paulo van Breugel</a>,
+<a href="https://www.has.nl/en/research/professorships/innovative-bio-monitoring-professorship/">Innovative Biomonitoring</a>
+and
+<a href="https://www.has.nl/en/research/professorships/climate-robust-landscapes-professorship/">Climate-robust Landscapes</a>
+research groups at the <a href="https://has.nl">HAS green academy</a></p>

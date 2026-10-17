@@ -1,0 +1,118 @@
+<h2>DESCRIPTION</h2>
+
+<em>r.spiderplot</em> draws a spider (radar) plot of the values of two or more
+<b>input</b> rasters. Each raster becomes one axis, arranged evenly around the
+circle, and the sampled values are connected into a closed outline.
+
+<p>
+The rasters are sampled either at a single point or at the features of a vector
+map:
+
+<ul>
+<li><b>coordinates</b> samples a single <em>east,north</em> point. When the
+module is launched from a <b>Map Display</b>, this field can be filled by
+clicking in the display.</li>
+<li><b>map</b> samples a vector of points or areas. A points map is drawn as
+one line per point. An areas map is aggregated into classes, each drawn as a
+mean outline with a shaded standard-deviation band.</li>
+</ul>
+
+<p>
+<b>Classes and facets.</b> For a vector, features are grouped into classes and
+each class is drawn as its own small radar (a facet); a single class is drawn
+as one radar. By default areas are grouped by <b>category</b>, so several area
+features that share a category are treated as one class. Provide a
+<b>group_column</b> to define classes from an attribute instead: features
+sharing a column value form one class. For points, <b>group_column</b> likewise
+aggregates the points of each class into a mean and standard-deviation band;
+without it every point is a separate line. Restrict which features are used
+with <b>cats</b> or <b>where</b>.
+
+<p>
+Each axis is scaled independently to its own range. Provide the range with the
+<b>minimum</b> and <b>maximum</b> options (one value per input raster, in the
+same order). Any bound that is left empty, or omitted entirely, is computed
+from the raster's own value range. Values are clamped to their axis range. Use
+the <b>-r</b> flag to print the <em>[min, max]</em> range next to each axis
+label.
+
+<h2>NOTES</h2>
+
+The interactive coordinate picker (the button next to the <b>coordinates</b>
+field) requires launching the module from the GRASS GUI with an open Map
+Display. Run standalone (for example from the command line) the picker is
+inactive and the coordinates must be entered directly.
+
+<p>
+Sampling honors the current computational region. A point that falls outside
+the region, or on a NULL cell, produces a warning and is drawn at the axis
+minimum.
+
+<p>
+At least two rasters are required; three or more make the plot meaningful.
+
+<p>
+For area classes the mean and standard deviation are computed over all cells of
+the areas in the class (areas sharing a category are merged first). The band
+spans the mean plus and minus one (population) standard deviation.
+
+<p>
+The <b>nprocs</b> and <b>memory</b> options are used for the vector aggregation
+(rasterizing the areas and computing the zonal statistics) and when an axis
+range has to be computed from the rasters.
+
+<h2>EXAMPLES</h2>
+
+Spider plot of three rasters at a point, with computed axis ranges, shown in an
+interactive window:
+
+<div class="code"><pre>
+r.spiderplot input=elevation,slope,aspect coordinates=637500,221750
+</pre></div>
+
+Fix the axis ranges, label the axes, and save to a file:
+
+<div class="code"><pre>
+r.spiderplot input=elevation,slope,aspect \
+  minimum=50,0,0 maximum=150,45,360 \
+  labels="Elevation,Slope,Aspect" \
+  coordinates=637500,221750 output=spider.png -n -l
+</pre></div>
+
+Leave one bound to be computed (empty entry) while fixing the others:
+
+<div class="code"><pre>
+r.spiderplot input=elevation,slope,aspect \
+  minimum=50,0,0 maximum=,45,360 \
+  coordinates=637500,221750
+</pre></div>
+
+Sample a points map, drawing one line per point:
+
+<div class="code"><pre>
+r.spiderplot input=elevation,slope,aspect map=samples output=points.png
+</pre></div>
+
+Aggregate an areas map into one facet per land-cover class, each with a
+standard-deviation band:
+
+<div class="code"><pre>
+r.spiderplot input=elevation,slope,aspect map=zones \
+  group_column=landcover output=classes.png
+</pre></div>
+
+<h2>SEE ALSO</h2>
+
+<em>
+<a href="r.barplot.html">r.barplot</a>,
+<a href="r.what.html">r.what</a>,
+<a href="r.univar.html">r.univar</a>,
+<a href="t.rast.stl.html">t.rast.stl</a>
+</em>
+
+<h2>AUTHOR</h2>
+
+<a href="https://ecodiv.earth">Paulo van Breugel</a>,
+<a href="https://has.nl">HAS green academy</a>,
+<a href="https://www.has.nl/en/research/professorships/innovative-bio-monitoring-professorship/">Innovative Biomonitoring research group</a>,
+<a href="https://www.has.nl/en/research/professorships/climate-robust-landscapes-professorship/">Climate-robust Landscapes research group</a>

@@ -1,6 +1,6 @@
 MODULE_TOPDIR = ../..
 
-PGM = t.rast.eventdetect
+PGM = t.rast.event
 
 include $(MODULE_TOPDIR)/include/Make/Script.make
 

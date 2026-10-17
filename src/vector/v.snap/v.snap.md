@@ -1,6 +1,7 @@
 ## NAME
 
-_v.snap_: Snap points from a vector point map onto the nearest location on the features of a vector line map. Original categories and attributes are preserved.
+_v.snap_: Snap points from a vector point map onto the nearest location on the
+features of a vector line map. Original categories and attributes are preserved.
 
 ## DESCRIPTION
 
@@ -92,4 +93,6 @@ v.snap input=observations layer=2 lines=rivers output=obs_on_rivers
 
 ## AUTHOR
 
-[Paulo van Breugel](https://ecodiv.earth), [HAS green academy](https://has.nl), [Innovative Biomonitoring research group](https://www.has.nl/en/research/professorships/innovative-bio-monitoring-professorship/), [Climate-robust Landscapes research group](https://www.has.nl/en/research/professorships/climate-robust-landscapes-professorship/)
+[Paulo van Breugel](https://ecodiv.earth), [HAS green academy](https://has.nl),
+[Innovative Biomonitoring research group](https://www.has.nl/en/research/professorships/innovative-bio-monitoring-professorship/),
+[Climate-robust Landscapes research group](https://www.has.nl/en/research/professorships/climate-robust-landscapes-professorship/)

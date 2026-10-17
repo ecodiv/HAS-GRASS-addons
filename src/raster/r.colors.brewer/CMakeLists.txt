@@ -1,8 +1,12 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(t.rast.eventdetect LANGUAGES NONE)
+project(r.colors.brewer LANGUAGES NONE)
 
 include(build_addon)
+
+add_files_to_etc_dir(
+  ${PROJECT_NAME}
+  FILES colorbrewer_data.py)
 
 build_addon(
   ${PROJECT_NAME}
