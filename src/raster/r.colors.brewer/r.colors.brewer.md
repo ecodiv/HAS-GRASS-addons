@@ -40,6 +40,12 @@ values) or as percentages. With **-d** each interval becomes a flat band.
 Without it, the class colors are centered on their intervals and interpolated
 into a gradient.
 
+When the color table uses fixed values (a **range** or absolute
+**breakpoints**), cells outside that span keep the nearest end color: values
+below the minimum get the first color and values above the maximum get the
+last color. Percentage rules that run from 0% to 100% already cover the whole
+map, so they need no such extension.
+
 Qualitative schemes assign the colors to integer categories 1 to **classes**.
 The **breakpoints**, **range** and **-d** settings do not apply to them.
 

@@ -242,6 +242,17 @@ def continuous_breakpoint_rules(edge_strings, edge_values, is_percent, colors):
     return rules
 
 
+def clamp_to_ends(rules):
+    """Extend the first and last colors to -inf and inf.
+
+    r.colors leaves cells outside the rule range uncolored. Repeating the end
+    colors at -inf and inf makes below-range cells keep the first color and
+    above-range cells the last color (the colors are equal across each outer
+    segment, so the extension is flat rather than interpolated).
+    """
+    return [("-inf", rules[0][1]), *rules, ("inf", rules[-1][1])]
+
+
 def build_rules(colors, scheme_type, flags, breakpoints, vmin, vmax):
     """Return a list of (position_string, (r, g, b)) rule entries."""
     nclasses = len(colors)
@@ -251,14 +262,25 @@ def build_rules(colors, scheme_type, flags, breakpoints, vmin, vmax):
     if breakpoints is not None:
         edge_strings, edge_values, is_percent = breakpoints
         if flags["d"]:
-            return discrete_rules(edge_strings, colors)
-        return continuous_breakpoint_rules(
-            edge_strings, edge_values, is_percent, colors
-        )
+            rules = discrete_rules(edge_strings, colors)
+        else:
+            rules = continuous_breakpoint_rules(
+                edge_strings, edge_values, is_percent, colors
+            )
+        spans_full_range = is_percent and edge_values[0] <= 0 and edge_values[-1] >= 100
+    elif flags["d"]:
+        rules = discrete_rules(edge_positions(nclasses, vmin, vmax), colors)
+        spans_full_range = vmin is None
+    else:
+        rules = list(zip(anchor_positions(nclasses, vmin, vmax), colors))
+        spans_full_range = vmin is None
 
-    if flags["d"]:
-        return discrete_rules(edge_positions(nclasses, vmin, vmax), colors)
-    return list(zip(anchor_positions(nclasses, vmin, vmax), colors))
+    # Percentage rules from 0 to 100 already span the map, so they need no
+    # extension; fixed-value rules can stop short of the data and must not
+    # leave the cells beyond them uncolored.
+    if not spans_full_range:
+        rules = clamp_to_ends(rules)
+    return rules
 
 
 def main():
