@@ -36,6 +36,17 @@
 # % guisection: Input
 # %end
 
+# %option
+# % key: frequency
+# % type: string
+# % label: Frequency measure
+# % description: Express histogram frequency as cell count or percentage of non-NULL cells.
+# % options: count,percent
+# % answer: count
+# % required: yes
+# % guisection: Input
+# %end
+
 # %option G_OPT_F_OUTPUT
 # % key: output
 # % label: Name of output image file
@@ -74,7 +85,7 @@
 # % key: style
 # % type: string
 # % label: Matplotlib style
-# % description: Matplotlib style sheet, see https://matplotlib.org/stable/gallery/style_sheets/style_sheets_reference.html
+# % description: Name of a built-in Matplotlib style (see https://matplotlib.org/stable/gallery/style_sheets/style_sheets_reference.html), or the path to a custom .mplstyle file (see https://matplotlib.org/stable/tutorials/introductory/customizing.html#defining-your-own-style).
 # % required: no
 # % guisection: Plot format
 # %end
@@ -84,6 +95,33 @@
 # % type: string
 # % label: Plot title
 # % description: Optional title above the plot.
+# % required: no
+# % guisection: Plot format
+# %end
+
+# %option
+# % key: x_label
+# % type: string
+# % label: X-axis label
+# % description: Label of the horizontal axis. Defaults to the raster name or cell count, depending on orientation.
+# % required: no
+# % guisection: Plot format
+# %end
+
+# %option
+# % key: y_label
+# % type: string
+# % label: Y-axis label
+# % description: Label of the vertical axis. Defaults to the frequency measure or raster name, depending on orientation.
+# % required: no
+# % guisection: Plot format
+# %end
+
+# %option
+# % key: background_color
+# % type: string
+# % label: Background color
+# % description: Color of the figure and plotting area. Use "transparent" for a transparent background.
 # % required: no
 # % guisection: Plot format
 # %end
@@ -205,14 +243,18 @@ def lazy_import_py_modules(to_file):
 
 
 def apply_style(style):
-    """Apply a Matplotlib style sheet after validating its name."""
+    """Apply a Matplotlib style sheet: either a built-in style name, or the
+    path to a custom .mplstyle file.
+    """
     if not style:
         return
-    if style not in plt.style.available:
+    if style not in plt.style.available and not os.path.isfile(style):
         gs.fatal(
-            _("Unknown style '{}'. Available styles: {}").format(
-                style, ", ".join(plt.style.available)
-            )
+            _(
+                "'{}' is neither a built-in style ({}) nor an existing "
+                "file. A custom style is given as the path to a "
+                ".mplstyle file."
+            ).format(style, ", ".join(plt.style.available))
         )
     plt.style.use(style)
 
@@ -400,6 +442,23 @@ def parse_axis_limits(value):
     return limits
 
 
+def scale_frequencies(counts, frequency):
+    """Return histogram frequencies as counts or percentages."""
+    if frequency == "percent":
+        total = sum(counts)
+        return [100 * count / total for count in counts]
+    return counts
+
+
+def get_background_color(value):
+    """Return a background color and whether it is transparent."""
+    if not value:
+        return None, False
+    if value.lower() == "transparent":
+        return "none", True
+    return get_valid_color(value), False
+
+
 def draw_histogram(options, flags, counts, edges, centers):
     """Draw and display or save the histogram."""
     horizontal = flags["h"]
@@ -444,20 +503,30 @@ def draw_histogram(options, flags, counts, edges, centers):
         edge + (width - size) / 2
         for edge, width, size in zip(edges[:-1], widths, bar_sizes)
     ]
+    frequencies = scale_frequencies(counts, options["frequency"])
+    frequency_label = (
+        _("Percentage of cells (%)")
+        if options["frequency"] == "percent"
+        else _("Cell count")
+    )
 
-    _figure, axis = plt.subplots(figsize=dimensions)
+    background_color, transparent = get_background_color(options["background_color"])
+    figure, axis = plt.subplots(figsize=dimensions)
+    if background_color is not None:
+        figure.patch.set_facecolor(background_color)
+        axis.set_facecolor(background_color)
     if horizontal:
-        axis.barh(positions, counts, height=bar_sizes, align="edge", **bar_kwargs)
-        axis.set_xlabel(_("Cell count"))
-        axis.set_ylabel(strip_mapset(options["map"]))
+        axis.barh(positions, frequencies, height=bar_sizes, align="edge", **bar_kwargs)
+        axis.set_xlabel(options["x_label"] or frequency_label)
+        axis.set_ylabel(options["y_label"] or strip_mapset(options["map"]))
         if axis_limits:
             axis.set_ylim(axis_limits)
         if flags["g"]:
             axis.xaxis.grid(True, alpha=0.5)
     else:
-        axis.bar(positions, counts, width=bar_sizes, align="edge", **bar_kwargs)
-        axis.set_xlabel(strip_mapset(options["map"]))
-        axis.set_ylabel(_("Cell count"))
+        axis.bar(positions, frequencies, width=bar_sizes, align="edge", **bar_kwargs)
+        axis.set_xlabel(options["x_label"] or strip_mapset(options["map"]))
+        axis.set_ylabel(options["y_label"] or frequency_label)
         if axis_limits:
             axis.set_xlim(axis_limits)
         if flags["g"]:
@@ -473,7 +542,12 @@ def draw_histogram(options, flags, counts, edges, centers):
 
     output = options["output"]
     if output:
-        plt.savefig(output, bbox_inches="tight", dpi=dpi)
+        plt.savefig(
+            output,
+            bbox_inches="tight",
+            dpi=dpi,
+            transparent=transparent,
+        )
         plt.close()
         gs.message(_("Histogram written to <{}>.").format(os.path.abspath(output)))
     else:

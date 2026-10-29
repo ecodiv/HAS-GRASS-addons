@@ -133,7 +133,7 @@
 # % key: step
 # % type: double
 # % label: Nominal observation interval (days)
-# % description: Used only to derive the default max_gap. If omitted it is autodetected from the dataset granularity, else the median spacing of the observations.
+# % description: Used only to derive the default max_gap. If omitted it is autodetected as the median spacing of the observations, falling back to the dataset granularity.
 # % required: no
 # % guisection: Detection
 # %end
@@ -374,11 +374,17 @@ def main():
     if len(rows) < 2:
         gs.fatal(_("Need at least two maps to detect events."))
 
+    med_spacing = median_spacing([dt for _, dt in rows])
     step = float(options["step"]) if options["step"] else None
     if step is None:
+        # The granularity of an irregular point-time strds is the GCD of the
+        # observation dates (often 1 day) and then badly understates the real
+        # cadence, so the median spacing of the observations is the reliable
+        # nominal interval; the granularity is only a fallback for the rare
+        # case of too few observations to measure a spacing.
         step = (
-            step_from_granularity(info.get("granularity", ""))
-            or median_spacing([dt for _, dt in rows])
+            med_spacing
+            or step_from_granularity(info.get("granularity", ""))
             or 5.0
         )
     if step <= 0:
@@ -386,6 +392,18 @@ def main():
     max_gap = float(options["max_gap"]) if options["max_gap"] else 3.0 * step
     if max_gap <= 0:
         gs.fatal(_("max_gap must be positive."))
+    # A max_gap below the typical spacing breaks descent continuity at most
+    # observations, so few or no events can ever be detected; warn rather than
+    # silently returning an empty result.
+    if med_spacing is not None and max_gap < med_spacing:
+        gs.warning(
+            _(
+                "max_gap ({:.0f} d) is below the median observation spacing"
+                " ({:.0f} d); most observations break descent continuity and"
+                " few or no events will be detected. Increase max_gap, or set"
+                " step to the true observation interval."
+            ).format(max_gap, med_spacing)
+        )
     # A whole-series run (groupby=none) is typically coarser (e.g. one map per
     # year), where the fixed 30-day default would reject every step as gradual;
     # scale it with the observation interval instead.

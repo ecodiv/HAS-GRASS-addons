@@ -22,6 +22,7 @@ from unittest.mock import patch
 import grass.script as gs
 from grass.gunittest.case import TestCase
 from grass.gunittest.main import test
+from matplotlib import image as mpimg
 
 
 def load_r_histogram():
@@ -124,6 +125,13 @@ class TestRHistogram(TestCase):
             self.runModule("r.mask", flags="r")
             module.cleanup()
 
+    def test_percentage_frequencies(self):
+        """Percent frequencies are normalized to all non-NULL cells."""
+        module = load_r_histogram()
+        frequencies = module.scale_frequencies([1, 2, 1], "percent")
+        self.assertEqual(frequencies, [25, 50, 25])
+        self.assertEqual(sum(frequencies), 100)
+
     def test_output_file_created(self):
         """The module writes a non-empty image file."""
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as stream:
@@ -134,10 +142,17 @@ class TestRHistogram(TestCase):
                 map=self.value_raster,
                 bins=5,
                 output=output,
+                frequency="percent",
+                x_label="Raster value",
+                y_label="Cell percentage",
+                background_color="transparent",
                 overwrite=True,
             )
             self.assertTrue(os.path.isfile(output))
             self.assertGreater(os.path.getsize(output), 0)
+            pixels = mpimg.imread(output)
+            self.assertEqual(pixels.shape[2], 4)
+            self.assertAlmostEqual(float(pixels[0, 0, 3]), 0)
         finally:
             if os.path.exists(output):
                 os.remove(output)

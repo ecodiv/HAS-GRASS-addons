@@ -2,12 +2,15 @@
 
 *r.histogram* draws a histogram of the non-NULL values in an input raster map.
 The **bins** option sets the number of equal-width intervals. The height of
-each bar is the number of raster cells in that interval.
+each bar is the number of raster cells in that interval. Set
+**frequency=percent** to show each bin as a percentage of all non-NULL cells
+instead; the percentages across all bins sum to 100.
 
-The histogram is computed with *r.stats*. Integer rasters are converted to a
-temporary floating-point raster to ensure that values are grouped into the
-requested number of equal-width bins instead of being reported as individual
-categories.
+The histogram is computed with *r.stats*. Only the aggregated count for each
+bin is passed to Python, so memory use does not depend on the number of cells in
+the raster. Integer rasters are converted to a temporary floating-point raster
+to ensure that values are grouped into the requested number of equal-width
+bins instead of being reported as individual categories.
 
 By default, the active Matplotlib style determines the bar color. A single
 **color** can be set using a color name, hexadecimal value, or `R:G:B` triplet.
@@ -19,9 +22,16 @@ options control the remaining bar appearance.
 
 The histogram can be drawn horizontally (**-h**), with grid lines along the
 count axis (**-g**), rotated value-axis labels (**rotate_labels**), an optional
-**title**, and limited value-axis bounds (**axis_limits**). A Matplotlib
-[style sheet](https://matplotlib.org/stable/gallery/style_sheets/style_sheets_reference.html)
-can be applied with the **style** option, for example `style=ggplot`.
+**title**, custom **x_label** and **y_label** axis labels, and limited
+value-axis bounds (**axis_limits**). A Matplotlib [style
+sheet](https://matplotlib.org/stable/gallery/style_sheets/style_sheets_reference.html)
+can be applied with the **style** option, for example `style=ggplot`. **style**
+also accepts the path to a custom
+[.mplstyle file](https://matplotlib.org/stable/tutorials/introductory/customizing.html#defining-your-own-style).
+The **background_color** option sets the background of both the figure and the
+plotting area. It accepts color names, hexadecimal values, and `R:G:B`
+triplets. Set `background_color=transparent` to create a transparent
+background in output formats that support transparency, such as PNG.
 
 By default, the plot is displayed on screen. If **output** is given, the plot
 is written to that file. The file format is determined from its extension. The
@@ -52,10 +62,11 @@ r.histogram map=elevation bins=40 output=r_histogram.png
 ```
 
 Draw the histogram with each bar colored from the `elevation` raster color
-table:
+table and express the frequencies as percentages:
 
 ```sh
-r.histogram -c map=elevation bins=40 output=r_histogram_colors.png
+r.histogram -c map=elevation bins=40 frequency=percent \
+  output=r_histogram_colors.png
 ```
 
 Draw a horizontal histogram with a grid, a reduced relative bar width, and a
@@ -63,6 +74,8 @@ Matplotlib style:
 
 ```sh
 r.histogram -hg map=elevation bins=30 rwidth=0.9 style=ggplot \
+  x_label="Number of cells" y_label="Elevation (m)" \
+  background_color=transparent \
   output=r_histogram_horizontal.png
 ```
 
@@ -70,6 +83,7 @@ r.histogram -hg map=elevation bins=30 rwidth=0.9 style=ggplot \
 
 *[d.histogram](https://grass.osgeo.org/grass-stable/manuals/d.histogram.html),
 [r.boxplot](https://grass.osgeo.org/grass-stable/manuals/addons/r.boxplot.html),
+[r.quantile](https://grass.osgeo.org/grass-stable/manuals/r.quantile.html),
 [r.stats](https://grass.osgeo.org/grass-stable/manuals/r.stats.html),
 [v.histogram](https://grass.osgeo.org/grass-stable/manuals/addons/v.histogram.html)*
 
