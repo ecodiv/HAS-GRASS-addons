@@ -52,22 +52,36 @@ Matplotlib is required.
 
 ## EXAMPLES
 
-The examples use the North Carolina sample dataset.
+The examples use the Raleigh, North Carolina sample dataset.
 
 Draw a 40-bin histogram of the `elevation` raster:
 
 ```sh
 g.region raster=elevation
-r.histogram map=elevation bins=40 output=r_histogram.png
+r.histogram map=elevation bins=40 output=r_histogram_01.png
 ```
 
+![](r_histogram_01.png)
+
+To change the appearance of the plot, apply a matplotlib style, like the ggplot style.
+
+```sh
+r.histogram map=elevation bins=40 frequency=percent \
+  style="ggplot" output=r_histogram_02.png
+```
+
+![](r_histogram_02.png)
+
 Draw the histogram with each bar colored from the `elevation` raster color
-table and express the frequencies as percentages:
+table and express the frequencies as percentages. We'll use 
 
 ```sh
 r.histogram -c map=elevation bins=40 frequency=percent \
-  output=r_histogram_colors.png
+  style=_mpl-gallery output=r_histogram_03.png
 ```
+
+![](r_histogram_03.png)
+
 
 Draw a horizontal histogram with a grid, a reduced relative bar width, and a
 Matplotlib style:
@@ -76,7 +90,7 @@ Matplotlib style:
 r.histogram -hg map=elevation bins=30 rwidth=0.9 style=ggplot \
   x_label="Number of cells" y_label="Elevation (m)" \
   background_color=transparent \
-  output=r_histogram_horizontal.png
+  output=r_histogram_04.png
 ```
 
 ## SEE ALSO
