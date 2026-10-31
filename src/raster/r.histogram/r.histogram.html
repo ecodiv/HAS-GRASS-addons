@@ -66,7 +66,8 @@ Draw a 40-bin histogram of the <tt>elevation</tt> raster:
 <div class="code">
   <pre>
 g.region raster=elevation
-r.histogram map=elevation bins=40 output=r_histogram_01.png
+r.histogram map=elevation plot_dimensions=5,4 \
+  dpi=100 output=r_histogram_01.png
 </pre>
 </div>
 
@@ -79,8 +80,9 @@ style.
 
 <div class="code">
   <pre>
-r.histogram map=elevation bins=40 frequency=percent \
-  style="ggplot" output=r_histogram_02.png
+r.histogram map=elevation plot_dimensions=5,4 \
+  dpi=100 frequency=percent style=ggplot \
+  output=r_histogram_02.png
 </pre>
 </div>
 
@@ -93,8 +95,9 @@ color table and express the frequencies as percentages. We'll use
 
 <div class="code">
   <pre>
-r.histogram -c map=elevation bins=40 frequency=percent \
-  style=_mpl-gallery output=r_histogram_03.png
+r.histogram -c map=elevation plot_dimensions=5,4 \
+  dpi=100 frequency=percent style=_mpl-gallery \
+  output=r_histogram_03.png
 </pre>
 </div>
 
@@ -107,12 +110,15 @@ Matplotlib style:
 
 <div class="code">
   <pre>
-r.histogram -hg map=elevation bins=30 rwidth=0.9 style=ggplot \
+r.histogram -hg map=elevation plot_dimensions=5,4 \
+  dpi=100  rwidth=0.9 style=ggplot \
   x_label="Number of cells" y_label="Elevation (m)" \
-  background_color=transparent \
-  output=r_histogram_04.png
+  background_color=transparent output=r_histogram_04.png
 </pre>
 </div>
+
+<p>
+<img src="r_histogram_03.png" alt="">
 
 <h2>SEE ALSO</h2>
 
