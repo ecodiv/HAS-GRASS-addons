@@ -58,7 +58,8 @@ Draw a 40-bin histogram of the `elevation` raster:
 
 ```sh
 g.region raster=elevation
-r.histogram map=elevation bins=40 output=r_histogram_01.png
+r.histogram map=elevation plot_dimensions=5,4 \
+  dpi=100 output=r_histogram_01.png
 ```
 
 ![](r_histogram_01.png)
@@ -66,8 +67,9 @@ r.histogram map=elevation bins=40 output=r_histogram_01.png
 To change the appearance of the plot, apply a matplotlib style, like the ggplot style.
 
 ```sh
-r.histogram map=elevation bins=40 frequency=percent \
-  style="ggplot" output=r_histogram_02.png
+r.histogram map=elevation plot_dimensions=5,4 \
+  dpi=100 frequency=percent style=ggplot \
+  output=r_histogram_02.png
 ```
 
 ![](r_histogram_02.png)
@@ -76,8 +78,9 @@ Draw the histogram with each bar colored from the `elevation` raster color
 table and express the frequencies as percentages. We'll use 
 
 ```sh
-r.histogram -c map=elevation bins=40 frequency=percent \
-  style=_mpl-gallery output=r_histogram_03.png
+r.histogram -c map=elevation plot_dimensions=5,4 \
+  dpi=100 frequency=percent style=_mpl-gallery \
+  output=r_histogram_03.png
 ```
 
 ![](r_histogram_03.png)
@@ -87,11 +90,13 @@ Draw a horizontal histogram with a grid, a reduced relative bar width, and a
 Matplotlib style:
 
 ```sh
-r.histogram -hg map=elevation bins=30 rwidth=0.9 style=ggplot \
+r.histogram -hg map=elevation plot_dimensions=5,4 \
+  dpi=100  rwidth=0.9 style=ggplot \
   x_label="Number of cells" y_label="Elevation (m)" \
-  background_color=transparent \
-  output=r_histogram_04.png
+  background_color=transparent output=r_histogram_04.png
 ```
+
+![](r_histogram_03.png)
 
 ## SEE ALSO
 
