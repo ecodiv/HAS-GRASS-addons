@@ -99,7 +99,7 @@ relative bar width, and a dark background:
 r.histogram -hg map=elevation plot_dimensions=5,4 \
   dpi=100  rwidth=0.9 style=ggplot \
   x_label="Number of cells" y_label="Elevation (m)" \
-  background_color=transparent output=r_histogram_04.png
+  output=r_histogram_04.png
 ```
 
 ![](r_histogram_04.png)
