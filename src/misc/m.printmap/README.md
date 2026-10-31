@@ -1,110 +1,14 @@
-## NAME
-
-_**m.printmap**_ - Composite raster, vector, legend and label layers into a PNG with per-layer opacity.
-
-
-## Flags and parameters
-
-### Flags:
-
-* **\--overwrite**: Allow output files to overwrite existing files
-* **\--help**: Print usage summary
-* **\--verbose**: Verbose module output
-* **\--quiet**: Quiet module output
-* **\--ui**: Force launching GUI dialog
-
-### Parameters:
-
-* **spec**\=_name_: Layer spec file (existing) - Existing layer specification file to read or update
-* **new\_spec**\=_name_: Layer spec file (new) - New layer specification file to create
-* **operation**\=_string_ **\[required\]**: Action to perform on the spec file (update = change options of an existing layer; settings = set template settings) - Options: _add, replace, update, render, list, delete, settings_ - Default: _add_
-* **type**\=_string_: Layer type (required for operation=add and operation=replace) - Options: _solid, raster, vector, labels, legend\_raster, legend\_vector, barscale, grid, image_
-* **position**\=_string_: 1-based layer index; 0 = at the end (append/last layer) - Default: _0_
-* **opacity**\=_float_: Layer opacity at compositing (0 = invisible, 1 = fully opaque) - Options: _0.0-1.0_ - Default: _1.0_
-* **background**\=_name_: Image background color- Background color of the output image, i.e. the outer canvas (operation=render) - Default: _none_
-* **output**\=_name_: Output PNG file- 
-* **width**\=_integer_: Total output width in pixels (default 1200; quick pixel-based output)
-* **figure\_width**\=_float_: Figure width in cm (physical output; needs dpi)
-* **figure\_height**\=_float_: Figure height in cm (physical output; needs dpi)
-* **dpi**\=_integer_: Resolution in dpi: sizes point-based fonts and line widths (both modes) and the figure in physical mode - Default: _96_
-* **margin**\=_integer_: Margin in pixels around the map, filled by the solid layer (operation=render) - Default: _0_
-* **font**\=_string_: Global render font - Default: _DejaVuSansCondensed_
-* **fontsize**\=_float_: Base font size in points; per-element sizes are ratios of this - Default: _12_
-* **solid\_color**\=_name_: Color - Fill color for a solid layer - Default: _white_
-* **raster**\=_name_: Raster map to display
-* **values**\=_string_: List of raster values to display (others transparent)
-* **vector**\=_name_: Name of input vector map - Vector map to display
-* **display\_type**\=_string_ - Vector feature type (default: auto-detected from the map, else area) - Options: _area, line, boundary, point, centroid_
-* **color**\=_name_: Color - Vector line color - Default: _black_
-* **fill\_color**\=_name_: Color - Vector fill color - Default: _none_
-* **line\_width**\=_float_: Vector line width in points (1 pt = 1 px at 96 dpi)
-* **cats**\=_range_: Category values - Category values to display
-* **where**\=_sql\_query_: WHERE conditions of SQL statement without 'where' keyword - WHERE condition of SQL statement to select features
-* **icon**\=_string_: Point/centroid symbol (e.g. basic/circle)
-* **size**\=_float_: Point/centroid symbol size in points (1 pt = 1 px at 96 dpi)
-* **labels**\=_name_: Name of input vector map - Vector map to label
-* **label\_type**\=_string_: Feature type to label (default: auto-detected from the map, else area) - Options: _area, line, boundary, point, centroid_
-* **attribute\_column**\=_name_: Attribute column to label with
-* **label\_font\_scale**\=_float_: Label text size as a ratio of the base font size (default 1)
-* **label\_color**\=_name_: Color - Label text color - Default: _black_
-* **label\_font**\=_string_: Label font
-* **xref**\=_string_: Label horizontal reference - Options: _left, center, right_
-* **label\_cats**\=_range_: Category values - Category values to label
-* **label\_where**\=_sql\_query_: WHERE conditions of SQL statement without 'where' keyword - WHERE condition of SQL statement to select features to label
-* **legend\_raster\_map**\=_name_: Raster map the legend describes
-* **legend\_raster\_title**\=_string_: Legend title
-* **legend\_raster\_at**\=_float\[,float,...\]_: Placement as bottom,top,left,right (percent of the map; \<0 or \>100 places it outside the map)
-* **legend\_raster\_font\_scale**\=_float_: Legend label size as a ratio of the base font size (default 1)
-* **legend\_raster\_title\_scale**\=_float_: Legend title size as a ratio of the base font size (default 1)
-* **legend\_raster\_digits**\=_integer_: Number of digits after the decimal point
-* **legend\_raster\_flags**\=_string\[,string,...\]_: Flags passed to d.legend - Options: _v, c, n, f, l, t, s, d_
-* **legend\_raster\_labelnum**\=_integer_: Number of labels for a smooth gradient legend
-* **legend\_raster\_label\_values**\=_string_: Specific values to label in the legend
-* **legend\_raster\_use**\=_string_: List of raster values to draw in the legend
-* **legend\_raster\_border\_color**\=_name_: Color - Legend border color - 
-Default: _none_
-* **legend\_raster\_bgcolor**\=_name_: Color - Legend box background color - Default: _none_
-* **legend\_vector\_map**\=_name_: Name of input vector map - Vector map the legend describes
-* **legend\_vector\_at**\=_float\[,float,...\]_: Top-left placement as x,y (percent of the map; \<0 or \>100 places it outside the map)
-* **legend\_vector\_title**\=_string_: Legend title
-* **legend\_vector\_columns**\=_integer_: Number of legend columns
-* **legend\_vector\_symbol\_size**\=_integer_: Legend symbol size in points (1 pt = 1 px at 96 dpi)
-* **legend\_vector\_font\_scale**\=_float_: Legend font size as a ratio of the base font size (default 1)
-* **legend\_vector\_font**\=_string_: Legend font
-* **legend\_vector\_bgcolor**\=_name_: Color - Background color (a color enables the background box) - Default: _none_
-* **legend\_vector\_border\_color**\=_name_: Color - Background border color - 
-Default: _black_
-* **barscale\_at**\=_float\[,float,...\]_: Barscale placement as x,y (percent)
-* **barscale\_style**\=_string_: Barscale style (see d.barscale)
-* **barscale\_length**\=_float_: Barscale length (in map units)
-* **barscale\_units**\=_string_: Barscale length units - Options: _meters, kilometers, feet, miles, nautmiles_
-* **barscale\_segment**\=_integer_: Number of barscale segments
-* **barscale\_font\_scale**\=_float_: Barscale font size as a ratio of the base font size (default 1)
-* **barscale\_color**\=_string_: Barscale color
-* **barscale\_bgcolor**\=_string_: Barscale background color
-* **barscale\_text\_position**\=_string_: Barscale text position - Options: _under, over, left, right_
-* **barscale\_flags**\=_string_: Flags passed to d.barscale - Options: _n, t, f_
-* **grid\_size**\=_string_: Grid spacing (map units, or DDD:MM:SS with the g flag)
-* **grid\_color**\=_string_: Grid line color
-* **grid\_border\_color**\=_string_: Grid border color
-* **grid\_text\_color**\=_string_: Grid text color
-* **grid\_font\_scale**\=_float_: Grid font size as a ratio of the base font size (default 0.5)
-* **grid\_width**\=_float_: Grid line width in points (1 pt = 1 px at 96 dpi)
-* **grid\_flags**\=_string_: Flags passed to d.grid - Options: _n, b, t, g, w, c, d, f, a_
-* **image**\=_name_: Image file to overlay (type=image)
-* **image\_at**\=_float\[,float,...\]_: Box as bottom,top,left,right (percent of the map; \<0 or \>100 places it outside); aspect kept, anchored lower-left
-
 ## DESCRIPTION
 
 *m.printmap* combines raster, vector, legend and label layers into a single PNG
 image. Like in the interactive map display, each layer can be made partly
-transparent. The description and settings of layers are written to a small
-JSON **spec file**. They are build up one layer at a time and then render.
+transparent. The description and settings of layers are written to a small JSON
+**spec file**. They are build up one layer at a time and then render.
 
-Working with the module therefore has two phases. The first phase consists of
-one or more steps to *Build* the spec file. Each run adds (or edits) one layer.
-The user picks a layer **type**, fills in that type's options and runs it to
-append the layerto the spec file. The second phase is to *render* the spec file
+Working with the module has two phases. The first phase consists of one or more
+steps to *Build* the spec file. Each run adds (or edits) one layer. The user
+picks a layer **type**, fills in that type's options and runs it to append the
+layerto the spec file. The second phase is to *render* the spec file
 (`operation=render`) to a PNG.
 
 Give the spec file with **new_spec** to start a new map, or **spec** to read or
@@ -127,6 +31,11 @@ manual. A vector layer uses the *d.vect* parameters (`map`, `type`, `color`,
 `digits`, `flags`, ...), a scale bar the *d.barscale* parameters, and so on. The
 longer GUI option names (e.g. `legend_raster_digits`) are also accepted as
 aliases and are converted to the canonical parameter name on the next write.
+
+Flags follow the same convention as the command they are passed to, so
+`legend_raster_flags=st` gives *d.legend* its `-s` and `-t` flags. A
+comma-separated form (`s,t`) is accepted as well, and is normalized to the
+concatenated form when the spec is written.
 
 The exception is font size: each text element stores a `font_scale` (and the
 raster legend a `title_scale`) that is a *ratio* of the template base font size
@@ -181,26 +90,27 @@ layer). See [Opacity and layer order](#opacity-and-layer-order).
 
 - **add** (default): append a new layer, or insert it at **position**. Requires
   **type**.
-- **replace**: replace the whole layer at **position** with a newly built one.
-  Requires **type** and its options.
-- **update**: change one or more options of the existing layer at **position**,
-  keeping the rest of the layer intact. Only the options you pass are altered,
-  but note that the layer's type cannot be changed (use **replace** for that).
 - **delete**: remove the layer at **position**.
-- **list**: print the template settings and the layers, bottom to top, with
-  their positions.
+- **list**: print the template settings, the placeholders and the layers, bottom
+  to top, with their positions.
 - **settings**: store the template settings in the spec (see
   [Template settings](#template-settings)).
 - **render**: draw the spec to the **output** PNG (see
   [Figure size and resolution](#figure-size-and-resolution)).
+
+The spec is plain JSON, so to change a value can be done quickly and easily by
+editing the json file. In addition, you can combine **delete** with **add** at a
+**position** to remove a layer to put one back in a different place. To render
+one layout with different input maps, use placeholders instead of editing at all
+(see [Reusing a template](#reusing-a-template-placeholders)).
 
 ### OPACITY AND LAYER ORDER
 
 The **opacity** option controls the level of transparancy of each layer. Layers
 are drawn bottom to top in the order they appear in the spec file.
 `operation=list` prints that order with 1-based indices, which the **position**
-option then uses to insert, replace or delete a layer (position `0` means the
-end/top). See the *operation* and *position* parameters for details.
+option then uses to insert or delete a layer (position `0` means the end/top).
+See the *operation* and *position* parameters for details.
 
 ### MARGIN AROUND THE MAP
 
@@ -270,6 +180,15 @@ one point is one pixel, so `line_width=1` is a hairline on screen.
 Note: for a *categorical* raster the `d.legend` module fits the class labels to
 the legend box and may override the requested font size.
 
+Note: for an integer (CELL) raster, `d.legend` draws a discrete category legend.
+Ticks belong to the continuous legend, so `legend_raster_flags=t` has no effect
+there; combine it with the smooth-gradient flag (`legend_raster_flags=st`) to get
+a gradient with ticks. For a floating-point (FCELL/DCELL) raster, `t` works on
+its own. Values given in **legend_raster_label_values** must lie within the
+raster's range, otherwise `d.legend` stops with an "out of range" error. Use
+**legend_raster_range** (`min,max`) to restrict the legend to a subset of the
+map's data range.
+
 ### TEMPLATE SETTINGS
 
 The style/layout options **font**, **fontsize**, **dpi**, **margin** and
@@ -291,11 +210,69 @@ for that one render only, without changing the spec. Everything else (the
 **figure_height**) is always per-render. `operation=list` prints the current
 settings.
 
+### REUSING A TEMPLATE: PLACEHOLDERS
+
+One spec can serve many maps by writing `${name}` wherever a value should vary,
+and filling those in at render time with the **replace** option. A placeholder
+goes anywhere a value goes, and the same name may appear more than once. A reference to a raster layer can therefore refer to a raster and the corresponding raster legend:
+
+```json
+{
+  "layers": [
+    { "kind": "raster", "map": "${rast}" },
+    { "kind": "legend_raster", "raster": "${rast}", "title": "${title}" }
+  ]
+}
+```
+
+Rendering it is then a single run:
+
+```sh
+m.printmap spec=NC.json operation=render output=precip.png width=600 \
+    replace="rast=2000_01_precip@climate_2000_2012,title=Rainfall"
+```
+
+**replace** takes a comma-separated list of `name=value` pairs. The substitution
+is made on the spec as it is read, not in the file, so the template keeps its
+placeholders and can be rendered again with other values. `operation=list` names
+the placeholders a spec contains, so you need not read the JSON to see what it
+expects. Rendering a spec that still has an unfilled placeholder is an error,
+rather than passing a literal `${name}` on to the display command.
+
+A value that contains a comma has to be quoted, as the comma would otherwise
+start the next pair:
+
+```sh
+replace="rast=precip,title='Rainfall, January 2000'"
+```
+
+A quote opens a quoted value only directly after the `=`, so an apostrophe
+inside an unquoted value (`title=Cote d'Ivoire`) needs no escaping; for a value
+with both an apostrophe and a comma, quote it with `"`. On the command line the
+shell consumes the outer quotes, which is why the example has `"` outside and
+`'` inside. In the GUI there is no shell, so type the inner form straight into
+the field.
+
+Numbers can be parameterized as well, but since the spec is JSON the field then
+has to be written as a string. Note that a multi-value placement needs quoting
+like any other value holding commas:
+
+```json
+{ "kind": "legend_raster", "raster": "${rast}", "at": "${pos}" }
+```
+
+```sh
+replace="rast=elevation,pos='5,95,101,104'"
+```
+
+Part of a value works too, so `"at": "5,95,${right},104"` with
+`replace="right=101"` moves one edge and leaves the rest of the placement in the
+template.
+
 ## WORKSPACE IMPORT
 
 An existing GRASS GUI map composition can be turned into a spec file with
-*[m.printmap.gxw](https://github.com/ecodiv/HAS-GRASS-addons/tree/main/src/misc/m.printmap.gxw)*, 
-which converts a workspace (`.gxw`) into
+*[m.printmap.gxw](m.printmap.gxw.md)*, which converts a workspace (`.gxw`) into
 the spec file format used by this module. You can then adjust the layers and
 render them.
 
@@ -309,8 +286,8 @@ with *g.region* and *r.mask* before rendering.
 This module is specifically convenient to compose a map using the **GUI**: you
 fill in each layer's options in its tab, without having to remember parameter
 names. The examples are for the commmand line, but it works the same way from
-the GUI. Build the spec one layer at a time, then later replace individual
-layers (Example 2) to reuse a layout for a new map. Use whichever fits you.
+the GUI. Build the spec one layer at a time, and use placeholders to reuse that
+layout for other maps (Example 2). Use whichever fits you.
 
 
 ## EXAMPLE
@@ -350,7 +327,7 @@ m.printmap spec=NC01.json type=vector vector=boundary_county \
 # Add legend (labels use the base font size; ratio defaults to 1)
 m.printmap spec=NC01.json type=legend_raster \
     legend_raster_map=elev_state_500m legend_raster_at=12,16,6,40 \
-    legend_raster_flags=s,t
+    legend_raster_flags=st
 
 # Add logo
 m.printmap spec=NC01.json type=image image=grass-logo.png \
@@ -376,26 +353,48 @@ The resulting map:
 
 ### Example 2
 
-Now, let's replace the elevation layer (which as we have seen above, is the 2nd
-layer) and the legend (4th position) with the layer with average precipitation
-in January 2000. This is part of the
-[NC Climate data set](https://grass.osgeo.org/download/data/).
+The layout of Example 1 does not depend on *which* raster it shows, so it can be
+built once and reused. We repeat it as *NC02.json*, but write `${rast}` instead
+of a map name. Because the raster layer and its legend use the same placeholder,
+one value sets both.
 
 ```sh
-# Replace the elevantion with rainfall layer
-m.printmap spec=NC01.json type=raster \
-           raster=2000_01_precip@climate_2000_2012 \
-           operation=replace position=2
+g.region raster=elev_state_500m
 
-# Replace legend
-m.printmap spec=NC01.json type=legend_raster \
-    legend_raster_map=2000_01_precip@climate_2000_2012 \
-    legend_raster_at=12,16,6,40 \
-    legend_raster_flags=s,t operation=replace position=4
+m.printmap new_spec=NC02.json operation=settings fontsize=11
+m.printmap spec=NC02.json type=solid solid_color="#ececec"
+m.printmap spec=NC02.json type=raster raster='${rast}'
+m.printmap spec=NC02.json type=vector vector=boundary_county \
+    color="49:49:49" line_width=0.1 opacity=0.8
+m.printmap spec=NC02.json type=legend_raster \
+    legend_raster_map='${rast}' legend_raster_at=12,16,6,40 \
+    legend_raster_flags=st
+m.printmap spec=NC02.json type=image image=grass-logo.png \
+    image_at="5,30,90,99"
+```
 
-# Render the map to PNG
-m.printmap spec=NC01.json operation=render \
-    output=m_printmap_02.png width=600
+The single quotes around `${rast}` keep the shell from expanding it; in the GUI
+you type `${rast}` into the field as it is. `operation=list` now reports the
+placeholder alongside the layers:
+
+```sh
+m.printmap spec=NC02.json operation=list
+```
+
+Rendering it for the elevation map gives the same composition as Example 1:
+
+```sh
+m.printmap spec=NC02.json operation=render output=m_printmap_02a.png \
+    width=600 replace="rast=elev_state_500m"
+```
+
+And rendering the same template for the average precipitation in January 2000
+(part of the [NC Climate data set](https://grass.osgeo.org/download/data/))
+gives a different map with no change to the spec file at all:
+
+```sh
+m.printmap spec=NC02.json operation=render output=m_printmap_02.png \
+    width=600 replace="rast=2000_01_precip@climate_2000_2012"
 ```
 
 The resulting map:
@@ -425,7 +424,7 @@ m.printmap spec=NC03.json type=vector vector=boundary_county \
 # Add legend
 m.printmap spec=NC03.json type=legend_raster \
     legend_raster_map=elev_state_500m legend_raster_at=5,95,101,104 \
-    legend_raster_flags=s,t
+    legend_raster_flags=st
 
 # Add logo
 m.printmap spec=NC03.json type=image image=grass-logo.png \
@@ -464,7 +463,7 @@ m.printmap spec=NC04.json type=vector vector=boundary_county \
 # Add legend
 m.printmap spec=NC04.json type=legend_raster \
     legend_raster_map=elev_state_500m legend_raster_at=-7,-2,25,95 \
-    legend_raster_flags=s,t
+    legend_raster_flags=st
 
 # Add logo
 m.printmap spec=NC04.json type=image image=grass-logo-horizontal.png \
@@ -485,7 +484,7 @@ The resulting map:
 
 ### Example 5
 
-Let's now combine two raster layers, the elevation map and a relief map based on
+Let's combine two raster layers, the elevation map and a relief map based on
 that map, by changing the opacity of one of them. We'll update the spec file
 created earlier.
 
@@ -500,10 +499,25 @@ m.printmap spec=NC04.json operation=list
 # will be drawn on top of the shaded relief layer.
 m.printmap spec=NC04.json type=raster raster=shadedrelief_state_500m \
     operation=add position=2
+```
 
-# Update the elevation layer spec by setting/changing its opacity to 0.5
-m.printmap spec=NC04.json position=3 operation=update opacity=0.5
+The elevation layer now sits at position 3, fully opaque, hiding the relief
+underneath it. Make it half transparent by setting its `opacity` in
+*NC04.json*:
 
+```json
+{
+  "kind": "raster",
+  "map": "elev_state_500m",
+  "opacity": 0.5
+}
+```
+
+Alternatively, take the layer out and add it back with the opacity you want:
+`operation=delete position=3`, then `type=raster raster=elev_state_500m
+operation=add position=3 opacity=0.5`.
+
+```sh
 # Print map
 m.printmap spec=NC04.json operation=render \
     output=m_printmap_05.png width=600 --overwrite
