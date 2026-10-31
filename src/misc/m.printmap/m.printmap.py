@@ -44,9 +44,9 @@
 # % key: operation
 # % type: string
 # % required: yes
-# % options: add,replace,update,render,list,delete,settings
+# % options: add,render,list,delete,settings
 # % answer: add
-# % description: Action to perform on the spec file (update = change options of an existing layer; settings = set template settings)
+# % description: Action to perform on the spec file (settings = set template settings)
 # % guisection: Main
 # %end
 
@@ -55,7 +55,7 @@
 # % type: string
 # % required: no
 # % options: solid,raster,vector,labels,legend_raster,legend_vector,barscale,grid,image
-# % description: Layer type (required for operation=add and operation=replace)
+# % description: Layer type (required for operation=add)
 # % guisection: Main
 # %end
 
@@ -90,6 +90,16 @@
 # % key: output
 # % required: no
 # % description: Output PNG file
+# % guisection: Render
+# %end
+
+# %option
+# % key: replace
+# % type: string
+# % required: no
+# % multiple: yes
+# % label: Placeholder substitutions as name=value
+# % description: Replace ${name} throughout the spec when rendering, e.g. replace="rast=elevation,title=Elevation"
 # % guisection: Render
 # %end
 
@@ -669,6 +679,7 @@
 
 import json
 import os
+import re
 import sys
 import tempfile
 
@@ -802,10 +813,6 @@ def normalize_flags(value, kind=None):
         if char not in seen:
             seen.append(char)
     return "".join(seen)
-
-# All GUI option names that belong to some layer type (used by operation=update
-# to tell "wrong option for this layer kind" from an unrelated control option).
-_LAYER_OPT_NAMES = {name for opts in _TYPE_OPTIONS.values() for name in opts}
 
 # Template-level style/layout settings. They live in the spec's 'settings'
 # block (so a spec acts as a reusable template) and each is overridable at
@@ -966,6 +973,161 @@ def _validate_layer(kind, layer):
             gs.fatal("Layer type 'image' requires the 'image' file option.")
         if "at" not in layer:
             gs.fatal("Layer type 'image' requires the 'image_at' placement.")
+
+
+# ----------------------------------------------------------------------------
+# Placeholders
+#
+# A spec can stand in for many maps by writing ${name} wherever a value should
+# vary, and filling those in at render time with replace=. Substitution happens
+# on the parsed spec in memory, on the render path only: the operations that
+# write the spec back must never see substituted values, or the template would
+# lose its placeholders.
+# ----------------------------------------------------------------------------
+_PLACEHOLDER = re.compile(r"\$\{([^}]*)\}")
+
+
+def _split_entries(value):
+    """Split the 'replace' option into its name=value entries. Commas separate
+    entries, but a value may contain one by quoting it
+    (title='Rainfall, Jan 2000'). A quote opens a quoted value only directly
+    after the '=', so an apostrophe in an unquoted value (Cote d'Ivoire) is
+    taken literally."""
+    entries, current, quote, value_at = [], [], None, None
+    for char in value:
+        if quote:
+            if char == quote:
+                quote = None
+            else:
+                current.append(char)
+        elif char == "=" and value_at is None:
+            current.append(char)
+            value_at = len(current)
+        elif char in "\"'" and value_at == len(current):
+            quote = char
+        elif char == ",":
+            entries.append("".join(current))
+            current, value_at = [], None
+        else:
+            current.append(char)
+    if quote:
+        gs.fatal(f"Unbalanced {quote} quote in replace=<{value}>.")
+    entries.append("".join(current))
+    return entries
+
+
+def parse_replacements(value):
+    """Parse the 'replace' option into a {name: value} mapping. A repeated name
+    is refused rather than silently resolved, as it is nearly always a typo."""
+    replacements = {}
+    for entry in _split_entries(value):
+        entry = entry.strip()
+        if not entry:
+            continue
+        if "=" not in entry:
+            gs.fatal(f"replace entry <{entry}> is not of the form name=value.")
+        name, _, replacement = entry.partition("=")
+        name = name.strip()
+        if not name:
+            gs.fatal(f"replace entry <{entry}> has an empty placeholder name.")
+        if name in replacements:
+            gs.fatal(f"Placeholder <{name}> is given more than once in replace.")
+        replacements[name] = replacement.strip()
+    return replacements
+
+
+def substitute(obj, replacements):
+    """Return a copy of a parsed spec with every ${name} in a string replaced
+    by its value. Only values are rewritten, never dict keys: those are the
+    spec's own parameter names. A token with no replacement is left as it is,
+    so find_placeholders can report it."""
+    if isinstance(obj, dict):
+        return {key: substitute(value, replacements)
+                for key, value in obj.items()}
+    if isinstance(obj, list):
+        return [substitute(item, replacements) for item in obj]
+    if isinstance(obj, str):
+        return _PLACEHOLDER.sub(
+            lambda match: replacements.get(match.group(1), match.group(0)), obj
+        )
+    return obj
+
+
+def find_placeholders(obj):
+    """The set of ${name} names present in a parsed spec. Used both to list a
+    template's placeholders and to refuse a render that left one unfilled."""
+    found = set()
+    if isinstance(obj, dict):
+        for value in obj.values():
+            found |= find_placeholders(value)
+    elif isinstance(obj, list):
+        for item in obj:
+            found |= find_placeholders(item)
+    elif isinstance(obj, str):
+        found.update(_PLACEHOLDER.findall(obj))
+    return found
+
+
+def _bad_value(key, value, where):
+    """Message for a value that cannot be converted to the type the renderer
+    needs, pointing at the substitution that most likely produced it."""
+    return (f"'{key}' of {where} has the value <{value}>, which is not valid "
+            "here. Check the replace= value substituted into it.")
+
+
+def recoerce_spec(layers, settings):
+    """Restore the value types the renderer expects. A parameterized numeric
+    field has to be a string in the template ("at": "${pos}"), so after
+    substitution it holds e.g. "5,95,101,104". Re-apply the conversions
+    build_layer and capture_settings make, so a substituted value is accepted
+    exactly as the same value passed on the command line would be. The
+    conversions are idempotent, so values that are already numbers are
+    unchanged."""
+    for index, layer in enumerate(layers, start=1):
+        kind = layer.get("kind")
+        where = f"layer {index} ({kind})"
+        for key in _FLOAT_LIST_KEYS:
+            if isinstance(layer.get(key), str):
+                try:
+                    layer[key] = _coerce_layer_value(key, layer[key], kind)
+                except ValueError:
+                    gs.fatal(_bad_value(key, layer[key], where))
+        if isinstance(layer.get("opacity"), str):
+            try:
+                layer["opacity"] = float(layer["opacity"])
+            except ValueError:
+                gs.fatal(_bad_value("opacity", layer["opacity"], where))
+    for key in _SETTING_KEYS:
+        if key in settings:
+            try:
+                settings[key] = _coerce_setting(key, settings[key])
+            except (TypeError, ValueError):
+                gs.fatal(_bad_value(key, settings[key], "the template settings"))
+
+
+def resolve_placeholders(layers, settings, replace):
+    """Fill the spec's placeholders from the 'replace' option and return the
+    spec ready to render. Refuses a spec that still has an unfilled
+    placeholder: left in place it would reach the d.* command as a literal
+    '${name}' and fail there with a far less obvious message."""
+    if replace:
+        replacements = parse_replacements(replace)
+        present = find_placeholders(layers) | find_placeholders(settings)
+        unused = sorted(set(replacements) - present)
+        if unused:
+            gs.warning("replace= gives a value for %s, which the spec does not "
+                       "use." % ", ".join(unused))
+        layers = substitute(layers, replacements)
+        settings = substitute(settings, replacements)
+    unfilled = sorted(find_placeholders(layers) | find_placeholders(settings))
+    if unfilled:
+        gs.fatal(
+            "The spec has unfilled placeholder(s): %s. Give a value for each "
+            "with replace=, e.g. replace=\"%s=...\"."
+            % (", ".join(unfilled), unfilled[0])
+        )
+    recoerce_spec(layers, settings)
+    return layers, settings
 
 
 # ----------------------------------------------------------------------------
@@ -1509,6 +1671,14 @@ def op_list(path, layers, settings=None):
         pairs = ", ".join(f"{k}={settings[k]}" for k in _SETTING_KEYS
                           if k in settings)
         gs.message(f"Template settings in <{path}>: {pairs}")
+    # The placeholders are what a template still needs to be told at render
+    # time, so name them rather than leaving them to be spotted in the layers.
+    placeholders = sorted(
+        find_placeholders(layers) | find_placeholders(settings or {})
+    )
+    if placeholders:
+        gs.message(f"Placeholders in <{path}> (fill with replace=): "
+                   f"{', '.join(placeholders)}")
     if not layers:
         gs.message(f"Spec file <{path}> has no layers.")
         return
@@ -1549,52 +1719,12 @@ def op_add(path, layers, settings, options):
     write_spec(path, layers, settings)
 
 
-def op_replace(path, layers, settings, options):
-    """Replace the layer at 'position' (0 = last) with a new one."""
-    index = _target_index(_parse_position(options), len(layers))
-    layers[index] = build_layer(options)
-    write_spec(path, layers, settings)
-    gs.message(f"Replaced layer {index + 1} in <{path}>.")
-
-
 def op_delete(path, layers, settings, options):
     """Delete the layer at 'position' (0 = last)."""
     index = _target_index(_parse_position(options), len(layers))
     removed = layers.pop(index)
     write_spec(path, layers, settings)
     gs.message(f"Deleted layer {index + 1}: {summarize(removed)}")
-
-
-def op_update(path, layers, settings, options, provided):
-    """Change one or more options of the existing layer at 'position' (0 = last)
-    without rebuilding it: only the options you explicitly pass are merged in,
-    the rest of the layer is kept. The layer's type cannot be changed here (use
-    'replace' for that)."""
-    index = _target_index(_parse_position(options), len(layers))
-    layer = layers[index]
-    kind = layer.get("kind")
-    type_opts = _TYPE_OPTIONS.get(kind, {})
-    applied, wrong_kind = [], []
-    for opt_name in provided:
-        if opt_name == "opacity":
-            layer["opacity"] = float(options["opacity"])
-            applied.append("opacity")
-        elif opt_name in type_opts:
-            spec_key = type_opts[opt_name]
-            layer[spec_key] = _coerce_layer_value(spec_key, options[opt_name],
-                                                  kind)
-            applied.append(opt_name)
-        elif opt_name in _LAYER_OPT_NAMES:
-            wrong_kind.append(opt_name)  # a layer option, but not for this kind
-    if wrong_kind:
-        gs.warning("Option(s) %s do not apply to a '%s' layer; ignored."
-                   % (", ".join(sorted(wrong_kind)), kind))
-    if not applied:
-        gs.fatal(f"operation=update needs at least one option that applies to "
-                 f"the '{kind}' layer at position {index + 1} (e.g. opacity).")
-    write_spec(path, layers, settings)
-    gs.message("Updated %s on layer %d (%s) in <%s>."
-               % (", ".join(applied), index + 1, kind, path))
 
 
 def op_settings(path, layers, settings, options, provided):
@@ -1659,8 +1789,16 @@ def main():
         layers, settings = read_spec(path)
 
     if operation == "render":
+        layers, settings = resolve_placeholders(layers, settings,
+                                                options["replace"])
         _op_render(options, provided, layers, settings)
         return 0
+
+    # Substitution is a render-time step: the operations below act on the spec
+    # as stored, so a template keeps its placeholders.
+    if options["replace"]:
+        gs.warning("The replace option only applies to operation=render; "
+                   "ignored here.")
 
     if operation == "settings":
         op_settings(path, layers, settings, options, provided)
@@ -1676,10 +1814,6 @@ def main():
 
     if operation == "add":
         op_add(path, layers, settings, options)
-    elif operation == "replace":
-        op_replace(path, layers, settings, options)
-    elif operation == "update":
-        op_update(path, layers, settings, options, provided)
     elif operation == "list":
         op_list(path, layers, settings)
     elif operation == "delete":

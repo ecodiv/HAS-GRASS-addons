@@ -12,5 +12,6 @@ build_addon(
     m_printmap_02.png
     m_printmap_03.png
     m_printmap_04.png
+    m_printmap_05.png
     ${PROJECT_NAME}.html
     ${PROJECT_NAME}.md)
