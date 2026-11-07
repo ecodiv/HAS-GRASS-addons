@@ -1,0 +1,151 @@
+<h2>DESCRIPTION</h2>
+
+<em>i.in.svneo</em> imports SuperView-NEO multispectral imagery into GRASS GIS
+and, when requested, performs radiometric and atmospheric preprocessing.
+
+<p>
+The module supports four-band SuperView-NEO products in the order blue,
+green, red and near infrared (NIR).
+
+
+<p>
+The module can be used in two main ways. For bottom-of-atmosphere (BOA)
+surface reflectance products, it imports the bands, optionally rescales
+the values, and writes raster metadata such as semantic labels, units and
+the acquisition timestamp. For digital number (DN) products, it can keep
+the DN values, convert them to top-of-atmosphere (TOA) radiance, estimate
+surface reflectance with dark object subtraction (DOS), or run
+<em>i.atcorr</em> using 6S atmospheric correction.
+
+
+<p>
+Metadata are read from either the NSO ISO 19115 XML file or the raw
+SuperView-NEO L1B MUX XML file.
+
+
+<h2>NOTES</h2>
+
+<h3>Input data</h3>
+
+<p>
+The module accepts either an external GeoTIFF through <b>input</b> or a set
+of already imported raster maps through <b>input_bands</b>.
+Exactly one of these options should normally be used.
+
+
+<p>
+When <b>input</b> is used, the GeoTIFF is imported with <em>r.in.gdal</em>.
+The input file must contain the four SuperView-NEO bands in the order
+blue, green, red and NIR.
+
+
+<p>
+When <b>input_bands</b> is used, the import step is skipped. The raster maps
+must be named basename.1, basename.2, basename.3 and basename.4.
+
+
+<p>
+The <b>metadata</b> option is required.
+
+
+<h3>Processing levels</h3>
+
+<p>
+The <b>processing_level</b> option describes the input product.
+Use <b>processing_level=boa</b> for BOA surface reflectance products and
+<b>processing_level=dn</b> for DN products.
+
+
+<p>
+The <b>target_level</b> option describes the desired output.
+Examples include <b>as_is</b>, <b>dn</b>, <b>radiance</b>,
+<b>dos1</b>, <b>dos2</b> and <b>atcorr</b>.
+
+
+<h3>DN to radiance conversion</h3>
+
+<p>
+For DN products, TOA radiance is calculated per band as:
+
+
+<p>
+L = DN * GAIN + BIAS
+
+
+<p>
+Here L is TOA radiance, DN is the digital number, and GAIN and BIAS are
+calibration coefficients read from metadata.
+
+
+<h3>Dark object subtraction</h3>
+
+<p>
+The values <b>dos1</b> and <b>dos2</b> estimate surface reflectance using dark
+object subtraction (DOS). This is an approximate method.
+
+
+<h3>Atmospheric correction with i.atcorr</h3>
+
+<p>
+With <b>target_level=atcorr</b>, the module converts DN to radiance and runs
+<em>i.atcorr</em> using the 6S model.
+
+
+<h2>EXAMPLES</h2>
+
+<h3>Import a BOA product</h3>
+
+<div class="code"><pre>
+i.in.svneo input=scene_boa.tif metadata=metadata.xml output=svneo \
+processing_level=boa
+</pre></div>
+
+<h3>Convert DN to radiance</h3>
+
+<div class="code"><pre>
+i.in.svneo input=scene_dn.tif metadata=metadata.xml output=svneo \
+processing_level=dn target_level=radiance
+</pre></div>
+
+<h3>Run DOS1 correction</h3>
+
+<div class="code"><pre>
+i.in.svneo input=scene_dn.tif metadata=metadata.xml \
+geometry_metadata=l1b_mux.xml output=svneo \
+processing_level=dn target_level=dos1
+</pre></div>
+
+<h3>Run atmospheric correction</h3>
+
+<div class="code"><pre>
+i.in.svneo input=scene_dn.tif metadata=metadata.xml \
+geometry_metadata=l1b_mux.xml output=svneo \
+processing_level=dn target_level=atcorr
+</pre></div>
+
+<h2>REFERENCES</h2>
+
+<p>
+Chavez, P. S. Jr., 1988. Dark-object subtraction technique.
+
+
+<p>
+Moran et al., 1992. Surface reflectance retrieval.
+
+
+<p>
+Vermote et al., 1997. 6S atmospheric model.
+
+
+<h2>SEE ALSO</h2>
+
+<em>
+<a href="i.atcorr.html">i.atcorr</a>,
+<a href="i.landsat.toar.html">i.landsat.toar</a>,
+<a href="r.in.gdal.html">r.in.gdal</a>
+</em>
+
+<h2>AUTHOR</h2>
+
+<p><a href="https://ecodiv.earth">Paulo van Breugel</a>, <a href="https://has.nl">HAS green academy</a>, <a href="https://www.has.nl/en/research/professorships/innovative-bio-monitoring-professorship/">Innovative Biomonitoring research group</a>, <a href="https://www.has.nl/en/research/professorships/climate-robust-landscapes-professorship/">Climate-robust Landscapes research group</a></p>
+

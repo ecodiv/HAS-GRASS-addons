@@ -22,3 +22,5 @@ rad.json
 TestResults.xml
 /src/raster/r.colors.brewer/__pycache__
 src/misc/m.printmap.gxw/__pycache__/m.printmap.gxw.cpython-312.pyc
+.claude/
+
