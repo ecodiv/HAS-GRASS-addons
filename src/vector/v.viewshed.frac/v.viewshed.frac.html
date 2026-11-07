@@ -1,0 +1,149 @@
+<h2>DESCRIPTION</h2>
+
+<em>v.viewshed.frac</em> computes, for every point in an input vector map, the
+fraction of its surrounding area that is visible to an observer standing at that
+point. Two fractions can be produced, written as new columns on the input point
+map:
+
+<ul>
+<li><b>column_circle</b> &mdash; visible cells &divide; all cells within
+<em>max_distance</em>. Obstructions (e.g. hedges, walls) that occupy part of the
+circle lower the score even though nobody could stand inside them. This is the
+appropriate denominator when the question is <em>&ldquo;how much of my
+surroundings can I monitor?&rdquo;</em> &mdash; a concealed approach behind a
+hedge is a real reduction in situational awareness.</li>
+<li><b>column_standable</b> &mdash; visible cells &divide; standable cells
+within <em>max_distance</em>. Only cells where a person could actually be
+standing count in the denominator. Useful when the question is <em>&ldquo;of the
+places someone could be, how many can I see?&rdquo;</em></li>
+</ul>
+
+<p>
+The module is aimed at producing an overview of <b>relative visibility along
+paths or across park/plaza networks</b> &mdash; for example a social safety
+(&ldquo;sociale veiligheid&rdquo;) analysis where one wants to highlight
+stretches of a footpath with very low visibility of the surroundings. Sampling a
+path at regular intervals (e.g. with <em>v.to.points</em>) and running
+<em>v.viewshed.frac</em> on the resulting points yields a continuous visibility
+profile along the route. Other applications include comparing candidate bench or
+camera locations, evaluating the effect of proposed vegetation management, and
+computing openness indicators for urban-design studies.
+
+<p>
+For each observer point the module:
+
+<ol>
+<li>Sets a local computational region of <em>max_distance</em> around the point,
+snapped to the <em>surface</em> raster grid.</li>
+<li>Runs <em>r.viewshed</em> on the user-supplied blocking surface with the
+<em>-b</em> flag (binary output).</li>
+<li>Intersects the visible cells with the required <em>standable</em> mask.</li>
+<li>Divides by the chosen denominator and writes the result to the named
+attribute column(s).</li>
+</ol>
+
+<p>
+The computation can be distributed across multiple cores via the <em>nprocs</em>
+option.
+
+<h2>NOTES</h2>
+
+<h3>Blocking surface</h3>
+
+The <em>surface</em> raster must represent the elevation that blocks sightlines
+at eye level. A typical construction is:
+
+<div class="code"><pre>
+r.mapcalc "viewshed_surface = dtm + if(isnull(chm), 0, chm)"
+</pre></div>
+
+<p>
+where <em>chm</em> is a canopy-height or obstacle-height raster limited to the
+height range below eye level (e.g. vegetation up to 2 m). Tall canopies whose
+crowns start above eye level do not block person-to-person sightlines and should
+therefore be absent from <em>chm</em>.
+
+<h3>Standable mask</h3>
+
+The <em>standable</em> raster defines which cells may count as valid target
+locations. Null and zero cells are treated as excluded; all other values are
+treated as standable. A typical construction is:
+
+<div class="code"><pre>
+r.mapcalc "standable = if(isnull(chm) || chm &lt;= 0.2, 1, null())"
+</pre></div>
+
+<h3>Per-point elevations</h3>
+
+<em>observer_elevation</em> and <em>target_elevation</em> accept either a scalar
+(applied to all points) or the name of a numeric column in the input map. This
+allows eye heights to vary per observer &mdash; useful when points represent
+different sensors, camera heights, or seated versus standing people.
+
+<h3>Parallelisation</h3>
+
+Each worker processes a chunk of points. The <em>memory</em> budget given to
+<em>r.viewshed</em> is divided by <em>nprocs</em> so that the total memory
+footprint stays within the requested amount.
+
+<h3>Limitations</h3>
+
+<ul>
+<li>Non-square cells (different N-S and E-W resolutions) are not supported.</li>
+<li><em>r.viewshed</em> itself is not parallelised; parallelism here means
+running multiple <em>r.viewshed</em> calls concurrently, one per observer.</li>
+<li>Attribute writes happen serially after all workers finish, to avoid SQLite
+contention.</li>
+</ul>
+
+<h2>EXAMPLES</h2>
+
+<h3>Visibility along a footpath</h3>
+
+Sample a path every 2 m, then compute the full-circle visibility fraction within
+a 10 m radius:
+
+<div class="code"><pre>
+g.region raster=viewshed_surface
+v.to.points input=footpath output=footpath_pts dmax=2
+v.viewshed.frac input=footpath_pts \
+    surface=viewshed_surface standable=standable \
+    column_circle=vis_frac \
+    max_distance=10 observer_elevation=1.7 target_elevation=1.7 \
+    memory=8000 nprocs=8
+</pre></div>
+
+<p>
+The resulting <em>vis_frac</em> column can be used to colour the points or
+interpolated along the path to produce a continuous &ldquo;social safety&rdquo;
+profile.
+
+<h3>Both metrics, per-point eye height</h3>
+
+<div class="code"><pre>
+v.viewshed.frac input=survey_points \
+    surface=viewshed_surface standable=standable \
+    column_circle=vis_frac column_standable=vis_frac_std \
+    observer_elevation=eye_h target_elevation=1.7 \
+    max_distance=15 nprocs=8
+</pre></div>
+
+<p>
+Here <em>eye_h</em> is a numeric column on <em>survey_points</em> containing
+each respondent's eye height in metres.
+
+<h2>SEE ALSO</h2>
+
+<em>
+<a href="https://grass.osgeo.org/grass-stable/manuals/r.viewshed.html">r.viewshed</a>,
+<a href="https://grass.osgeo.org/grass-stable/manuals/addons/r.viewshed.exposure.html">r.viewshed.exposure</a>,
+<a href="https://grass.osgeo.org/grass-stable/manuals/addons/r.viewshed.cva.html">r.viewshed.cva</a>
+</em>
+
+<h2>AUTHOR</h2>
+
+<a href="https://ecodiv.earth">Paulo van Breugel</a>,
+<a href="https://has.nl">HAS green academy</a>,
+<a href="https://www.has.nl/en/research/professorships/innovative-bio-monitoring-professorship/">Innovative Biomonitoring research group</a>,
+<a href="https://www.has.nl/en/research/professorships/climate-robust-landscapes-professorship/">Climate-robust Landscapes research group</a>
+
